@@ -36,7 +36,16 @@ let
     }] else []
   ) vmNames));
 in
-activeEntries // stagedEntries // {
+{
+  hypervisor-host = {
+    name           = "hypervisor-host";
+    kind           = "machine-host";
+    owner          = "hypervisor";
+    public_key     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKrf3aZ6bTnSYT+GpotLCyaRw8irbkwY1DdUgrLcewFj host";
+    consumers      = [];
+    rotation_state = "active";
+  };
+} // activeEntries // stagedEntries // {
   dev_1 = {
     name           = "dev_1";
     kind           = "forge-git";
