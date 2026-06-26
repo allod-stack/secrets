@@ -6,7 +6,6 @@ let
     let d = machineHostKeys.${vm};
     in [ d.active ] ++ (if d.staged != null then [ d.staged ] else []);
 in {
-  "secrets/dev-1-forge-key.age".publicKeys           = [ hostKey ] ++ vmKeys "dev-1";
   "secrets/forgejo-https-token-dev-1.age".publicKeys  = [ hostKey ] ++ vmKeys "dev-1";
   "secrets/agent-pr-token.age".publicKeys             = [ hostKey ] ++ vmKeys "dev-1";
 }
