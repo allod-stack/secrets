@@ -1,0 +1,2 @@
+# Branches that require GPG-signed commits on push.
+# allod-agent does not GPG-sign, so this file is intentionally empty.

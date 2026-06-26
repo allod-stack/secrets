@@ -1,0 +1,2 @@
+# Active PR branches — pushes here require GPG-signed commits.
+# allod-agent does not GPG-sign, so this file is intentionally empty.

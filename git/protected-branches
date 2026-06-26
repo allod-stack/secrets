@@ -1,0 +1,9 @@
+# Format:
+#   <repo path relative to $HOME> <branch>
+#
+# Blank lines and comments are ignored.
+work/allod/tools master
+work/allod/strategy master
+work/allod/secrets master
+work/allod/inventory master
+work/allod/memory master
