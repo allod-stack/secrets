@@ -13,11 +13,11 @@
         "rev": "e74c61199a2a6492e589d636d07d4eb28a1c3d77",
         "revCount": 2,
         "type": "git",
-        "url": "ssh://git@forge.anarch.diy:2222/Allod/inventory.git"
+        "url": "https://forge.anarch.diy/allod/inventory.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@forge.anarch.diy:2222/Allod/inventory.git"
+        "url": "https://forge.anarch.diy/allod/inventory.git"
       }
     },
     "nixpkgs": {
