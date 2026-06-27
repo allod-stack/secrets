@@ -3,13 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    inventory = {
+      url = "git+ssh://git@forge.anarch.diy:2222/Allod/inventory.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, ... }:
+  outputs = { self, nixpkgs, inventory, ... }:
   let
     lib = nixpkgs.lib;
     identity = import ./identity.nix;
-    checkSystem = "x86_64-linux";
 
     credentials = import ./credentials.nix;
     secretsNix = import ./secrets.nix;
@@ -47,7 +50,8 @@
 
     homeModules.preferences = import ./modules/preferences.nix;
 
-    checks.${checkSystem}.credential-inventory =
+    checks = lib.genAttrs inventory.lib.supportedPlatforms (checkSystem: {
+      credential-inventory =
       let
         pkgs = nixpkgs.legacyPackages.${checkSystem};
         entries = builtins.attrValues credentials;
@@ -166,5 +170,6 @@
         echo "credential inventory validation passed"
         touch $out
       '';
+    });
   };
 }
