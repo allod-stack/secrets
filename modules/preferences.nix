@@ -6,7 +6,6 @@
   programs.bash = {
     enable = true;
     shellAliases = {
-      claude = "mkdir -p ~/work && cd ~/work && command claude";
       codex = "mkdir -p ~/work && cd ~/work && command codex";
     };
     sessionVariables = {
