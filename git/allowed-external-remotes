@@ -1,3 +1,3 @@
 # Allowlist of external remote URL patterns that agents are permitted to push to.
 # forge.anarch.diy is always allowed — no entry needed here.
-# allod-dev should only push to forge.anarch.diy.
+# dev-1 should only push to forge.anarch.diy.

@@ -47,6 +47,8 @@
     lib.vmUsernames = vmUsernames;
     lib.credentials = credentials;
     lib.identity = identity;
+    lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
+    lib.forgejoTokenGroups = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
 
     homeModules.preferences = import ./modules/preferences.nix;
 

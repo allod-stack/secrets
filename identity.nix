@@ -4,6 +4,9 @@ rec {
 
   hostname = "hypervisor";
   hostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKrf3aZ6bTnSYT+GpotLCyaRw8irbkwY1DdUgrLcewFj host";
+  # List form consumed by profiles (installer authorizedKeys, dev/privacy VM
+  # host trust). Synthetic single-recipient example; forks add their own hosts.
+  hostPublicKeys = [ hostPublicKey ];
 
   forgeHost = "forge.anarch.diy";
   forgePort = 2222;
