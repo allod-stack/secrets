@@ -34,6 +34,7 @@
     nexusIdentity = {
       inherit (identity) username hostname forgeHost forgePort;
       sshPublicKey = identity.hostPublicKey;
+      sshPublicKeys = identity.hostPublicKeys;
       forgeTokenFile = null;
     };
 
@@ -49,6 +50,9 @@
     lib.identity = identity;
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
     lib.forgejoTokenGroups = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
+    lib.profileDefinitions = {};
+    lib.profileData = {};
+    lib.githubCredentialTargets = {};
 
     homeModules.preferences = import ./modules/preferences.nix;
 
@@ -99,7 +103,9 @@
 
           coveredPaths = lib.flatten (map (e:
             map (c: c.secret) (
-              builtins.filter (c: c.type == "agenix" && c.repo == "secrets") e.consumers
+              builtins.filter (c:
+                (c.type == "agenix" && c.repo == "secrets") || c.type == "forge-key-secret"
+              ) e.consumers
             )
           ) entries);
           tokenPaths = builtins.attrNames secretsNix;

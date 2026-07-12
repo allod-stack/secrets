@@ -1,6 +1,8 @@
 let
   machineHostKeys = builtins.fromJSON (builtins.readFile ./machine-host-keys.json);
+  forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
   vmNames = builtins.attrNames machineHostKeys;
+  forgeKeyNames = builtins.attrNames forgeSshKeys;
 
   mkActiveEntry = vm: {
     name           = "${vm}-host";
@@ -8,7 +10,7 @@ let
     owner          = vm;
     public_key     = machineHostKeys.${vm}.active;
     consumers      = [
-      { type = "agenix"; repo = "profiles"; secret = "secrets/${vm}-ssh.age"; }
+      { type = "agenix"; repo = "secrets"; secret = "secrets/vm-host-keys/${vm}-ssh.age"; }
     ];
     rotation_state = "active";
   };
@@ -19,7 +21,7 @@ let
     owner          = vm;
     public_key     = machineHostKeys.${vm}.staged;
     consumers      = [
-      { type = "agenix"; repo = "profiles"; secret = "secrets/${vm}-ssh.age"; }
+      { type = "agenix"; repo = "secrets"; secret = "secrets/vm-host-keys/${vm}-ssh.age"; }
     ];
     rotation_state = "staged";
   };
@@ -35,29 +37,29 @@ let
       value = mkStagedEntry vm;
     }] else []
   ) vmNames));
-in
-{
-  hypervisor-host = {
-    name           = "hypervisor-host";
-    kind           = "machine-host";
-    owner          = "hypervisor";
-    public_key     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKrf3aZ6bTnSYT+GpotLCyaRw8irbkwY1DdUgrLcewFj host";
-    consumers      = [];
-    rotation_state = "active";
-  };
-} // activeEntries // stagedEntries // {
-  dev_1 = {
-    name           = "dev_1";
-    kind           = "forge-git";
-    owner          = "dev-1";
-    public_key     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILQEW5UsP3/cDNzpI4j28k8vKU87pC0jO/9m6Igy1lUT dev_1";
-    consumers      = [
-      { type = "forge-key-secret"; repo = "secrets"; secret = "secrets/dev-1-forge-key.age"; }
-      { type = "forgejo-ssh"; account = "allod-agent"; key = "dev_1"; }
-    ];
-    rotation_state = "active";
-  };
 
+  mkForgeGitEntry = forgeKey:
+    let
+      data = forgeSshKeys.${forgeKey};
+      hasStaged = data.staged != null;
+    in {
+      name           = forgeKey;
+      kind           = "forge-git";
+      owner          = data.owner;
+      public_key     = if hasStaged then data.staged else data.active;
+      consumers      = [
+        { type = "forge-key-secret"; repo = "secrets"; secret = data.secret; }
+        { type = "forgejo-ssh"; account = data.account; key = forgeKey; }
+      ];
+      rotation_state = if hasStaged then "staged" else "active";
+    };
+
+  forgeGitEntries = builtins.listToAttrs (map (forgeKey: {
+    name = forgeKey;
+    value = mkForgeGitEntry forgeKey;
+  }) forgeKeyNames);
+in
+activeEntries // stagedEntries // forgeGitEntries // {
   agent-pr-token = {
     name           = "agent-pr-token";
     kind           = "agent";
@@ -69,13 +71,13 @@ in
     rotation_state = "active";
   };
 
-  forgejo-https-token-dev-1 = {
-    name           = "forgejo-https-token-dev-1";
+  forgejo-https-token-allod-dev = {
+    name           = "forgejo-https-token-allod-dev";
     kind           = "agent";
     owner          = "allod-agent";
     public_key     = null;
     consumers      = [
-      { type = "agenix"; repo = "secrets"; secret = "secrets/forgejo-https-token-dev-1.age"; }
+      { type = "agenix"; repo = "secrets"; secret = "secrets/forgejo-https-token-allod-dev.age"; }
     ];
     rotation_state = "active";
   };

@@ -1,8 +1,9 @@
 {
-  "dev_1": {
+  "allod_vm": {
+    "owner": "allod-dev",
     "account": "allod-agent",
-    "owner": "dev-1",
-    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILQEW5UsP3/cDNzpI4j28k8vKU87pC0jO/9m6Igy1lUT dev_1",
-    "secret_path": "secrets/dev-1-forge-key.age"
+    "secret": "secrets/allod-dev-forge-key.age",
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILQEW5UsP3/cDNzpI4j28k8vKU87pC0jO/9m6Igy1lUT allod_vm",
+    "staged": null
   }
 }

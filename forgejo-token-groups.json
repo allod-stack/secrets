@@ -1,20 +1,20 @@
 {
-  "dev": {
+  "allod-dev.git": {
     "credentials": [
       {
-        "credential": "forgejo-https-token-dev-1",
-        "secret_path": "secrets/forgejo-https-token-dev-1.age",
+        "credential": "forgejo-https-token-allod-dev",
+        "secret_path": "secrets/forgejo-https-token-allod-dev.age",
         "format": "credential-store-url",
         "targets": [
-          { "system": "dev-1", "deployed_path": "/root/.git-credentials" }
+          { "system": "allod-dev", "deployed_path": "/root/.git-credentials" }
         ]
       }
     ],
     "local_auth_refresh": [
       {
         "contract": "nixos-netrc-from-root-git-credentials",
-        "source_credential": "forgejo-https-token-dev-1",
-        "system": "dev-1",
+        "source_credential": "forgejo-https-token-allod-dev",
+        "system": "allod-dev",
         "local_username": "allod"
       }
     ]

@@ -2,10 +2,8 @@ rec {
   username = "allod";
   email = "allod@example.com";
 
-  hostname = "hypervisor";
-  hostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKrf3aZ6bTnSYT+GpotLCyaRw8irbkwY1DdUgrLcewFj host";
-  # List form consumed by profiles (installer authorizedKeys, dev/privacy VM
-  # host trust). Synthetic single-recipient example; forks add their own hosts.
+  hostname = "nexus";
+  hostPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJvgPQ/XEO5jFd5Q5lfp1tMnCeK3RbRP0k0U05fBR0iu nexus";
   hostPublicKeys = [ hostPublicKey ];
 
   forgeHost = "forge.anarch.diy";
@@ -15,16 +13,23 @@ rec {
   gpgSigningKey = null;
 
   devVMs = {
-    dev-1 = { sshKeyName = "dev_1"; };
+    allod-dev = { sshKeyName = "allod_vm"; };
   };
 
-  privacyVMs = {};
+  privacyVMs = {
+    privacy-1 = { username = "privacy"; };
+  };
 
   sshHosts = {
-    dev-1 = {
+    allod-dev = {
       hostname = "192.0.2.10";
       user = "allod";
-      identityFile = "~/.ssh/dev_1";
+      identityFile = "~/.ssh/allod_vm";
+    };
+    privacy-1 = {
+      hostname = "192.0.2.11";
+      user = "privacy";
+      identityFile = "~/.ssh/host";
     };
     "forge.anarch.diy" = {
       hostname = "forge.anarch.diy";

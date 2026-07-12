@@ -1,6 +1,14 @@
 {
-  "dev-1": {
-    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIODCfQya44i0M3NcudbSDsR94tM1B1dY8ADdkvTG43Ay dev-1",
+  "nexus": {
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJvgPQ/XEO5jFd5Q5lfp1tMnCeK3RbRP0k0U05fBR0iu nexus",
+    "staged": null
+  },
+  "allod-dev": {
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB29JHw8OPoPHytdbNWZwk4rc38rySLEFslKtVlCB5UW allod-dev",
+    "staged": null
+  },
+  "privacy-1": {
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMYbFta9wmcAFLM5ZJE8va0nIxyJ6jsX6ZWGTK/DNYKJ privacy-1",
     "staged": null
   }
 }
