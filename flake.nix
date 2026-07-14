@@ -16,6 +16,17 @@
 
     credentials = import ./credentials.nix;
     secretsNix = import ./secrets.nix;
+    machineHostKeys = builtins.fromJSON (builtins.readFile ./machine-host-keys.json);
+    vmHostKeyDir = ./secrets/vm-host-keys;
+    vmHostKeySecretFiles =
+      lib.mapAttrs'
+        (file: _: {
+          name = lib.removeSuffix "-ssh.age" file;
+          value = vmHostKeyDir + "/${file}";
+        })
+        (lib.filterAttrs
+          (file: type: type == "regular" && lib.hasSuffix "-ssh.age" file)
+          (builtins.readDir vmHostKeyDir));
 
     devIdentities = builtins.mapAttrs (name: vm: {
       inherit (identity) username forgeHost forgePort;
@@ -50,6 +61,8 @@
     lib.identity = identity;
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
     lib.forgejoTokenGroups = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
+    lib.machineHostKeys = machineHostKeys;
+    lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.profileDefinitions = {};
     lib.profileData = {};
     lib.githubCredentialTargets = {};
@@ -63,7 +76,6 @@
           entries = builtins.attrValues credentials;
           entryNames = builtins.attrNames credentials;
 
-          machineHostKeys = builtins.fromJSON (builtins.readFile ./machine-host-keys.json);
           mhkNames = builtins.attrNames machineHostKeys;
           mhkBadShape = builtins.filter (vm:
             let d = machineHostKeys.${vm};
