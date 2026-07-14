@@ -5,3 +5,6 @@
 work/allod/tools master
 work/allod/secrets master
 work/allod/inventory master
+work/allod/nexus master
+work/allod/profiles master
+work/allod/vm master
