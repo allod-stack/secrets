@@ -38,5 +38,39 @@ rec {
       identityFile = "~/.ssh/allod_forge_host";
       identitiesOnly = true;
     };
+    example-backup-vps = {
+      hostname = "192.0.2.30";
+      user = "backup";
+      identityFile = "~/.ssh/host";
+    };
+    example-offsite-console = {
+      hostname = "192.0.2.31";
+      user = "storage";
+      identityFile = "~/.ssh/host";
+    };
+    example-provider-support = {
+      hostname = "192.0.2.32";
+      user = "support";
+      port = 2222;
+      identityFile = "~/.ssh/host";
+    };
+  };
+
+  externalSshTrustTargets = {
+    example-backup-vps = {
+      sshHost = "example-backup-vps";
+      authorizedKeysPath = "~/.ssh/authorized_keys";
+      recovery = "old-key";
+    };
+    example-offsite-console = {
+      sshHost = "example-offsite-console";
+      authorizedKeysPath = "~/.ssh/authorized_keys";
+      recovery = "provider-console";
+    };
+    example-provider-support = {
+      sshHost = "example-provider-support";
+      authorizedKeysPath = "~/.ssh/authorized_keys";
+      recovery = "provider-support";
+    };
   };
 }
