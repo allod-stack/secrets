@@ -63,11 +63,7 @@
     lib.forgejoTokenGroups = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
-    lib.profileDefinitions = {};
-    lib.profileData = {};
     lib.githubCredentialTargets = {};
-
-    homeModules.preferences = import ./modules/preferences.nix;
 
     checks = lib.genAttrs inventory.lib.supportedPlatforms (checkSystem:
       let

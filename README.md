@@ -7,7 +7,7 @@ the framework repos have something to build and check against. A real deployment
 replaces this flake with a private fork carrying the operator's actual identities,
 recipients, and `.age` blobs.
 
-Allod splits by ownership: framework repos (`vm`, `profiles`, `nexus`, `tools`)
+Allod splits by ownership: framework repos (`vm`, `archetypes`, `nexus`, `tools`)
 describe *how* the system works; this repo, alongside `inventory`, decides *what*
 exists. Secrets are encrypted with age/agenix — a single host identity key
 decrypts everything, and each VM's SSH host key is an age recipient for the
@@ -30,13 +30,13 @@ This repo owns:
 - the Forgejo HTTPS-token deployment map (`forgejo-token-groups.json`)
 - git policy data (`git/*`) — branch-protection, signing, PR-branch, and
   external-remote allowlists
-- a consumer preferences Home Manager module (`modules/preferences.nix`)
 - flake `checks` that keep all of the above internally consistent
 
 This repo does **not** own:
 
 - framework NixOS/Home Manager modules or the agenix app re-export (`vm`)
-- per-VM system configs and profile assembly (`profiles`)
+- the archetype framework, builders, and profile assembly (`archetypes`)
+- machine profile definitions — which modules compose each machine (`profiles`)
 - VM specs, the platform list, and the roster of record (`inventory`)
 - host NixOS config and provisioning scripts (`nexus`)
 - the git-hook scripts that *enforce* the git policy data (`tools`) — this repo
@@ -56,10 +56,7 @@ This repo does **not** own:
 | `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map (from `forgejo-token-groups.json`) |
 | `lib.machineHostKeys` | attrs | per-machine SSH host public keys, active + staged (from `machine-host-keys.json`) |
 | `lib.vmHostKeySecretFiles` | attrs | machine name -> path of its `*-ssh.age` host-key secret, derived by scanning `secrets/vm-host-keys/` |
-| `lib.profileDefinitions` | attrs | consumer profile-definition overlay — empty in the template |
-| `lib.profileData` | attrs | per-machine profile data — empty in the template |
 | `lib.githubCredentialTargets` | attrs | per-machine GitHub credential targets — empty in the template |
-| `homeModules.preferences` | HM module | consumer editor/shell preferences (nvim default editor, bash `codex` alias, `GIT_TERMINAL_PROMPT`) |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 
@@ -89,7 +86,7 @@ stores ciphertext only. Public keys and recipient metadata are public by nature.
 ## Layout
 
 ```
-flake.nix                     inputs (nixpkgs, inventory); lib / homeModules / checks outputs
+flake.nix                     inputs (nixpkgs, inventory); lib / checks outputs
 identity.nix                  synthetic identity, VM rosters, SSH host aliases, trust targets
 credentials.nix               credential inventory derived from the key registries + token entries
 secrets.nix                   agenix recipient map (.age path -> recipient public keys)
@@ -106,13 +103,11 @@ git/                          git policy data installed to ~/.config/git on VMs
   signing-required-branches   branches requiring GPG-signed commits
   active-pr-branches          remote branches requiring GPG-signed pushes
   allowed-external-remotes    remotes permitted for push (forge.anarch.diy always allowed)
-modules/
-  preferences.nix             consumer preferences Home Manager module
 ```
 
-## How `profiles` consumes it
+## How `archetypes` consumes it
 
-`profiles` pins this repo as its `secrets` flake input and reads almost every
+`archetypes` pins this repo as its `secrets` flake input and reads almost every
 output:
 
 - `devIdentities` / `privacyIdentities` / `nexusIdentity` / `vmUsernames` drive
@@ -122,7 +117,6 @@ output:
 - `credentials` / `forgeSshKeys` / `forgejoTokenGroups` / `githubCredentialTargets`
   drive token and forge-key deployment; `age.secrets` files are read straight from
   `${secrets}/<secret path>`.
-- `homeModules.preferences` is layered into each VM's Home Manager config.
 - `gitPolicySource` defaults to this flake, so `git/*` is symlinked into
   `~/.config/git/` on every dev VM and enforced by the `protected-refs-policy` hook
   from `tools`.
@@ -131,7 +125,8 @@ output:
 
 - `inventory` — VM specs, platform list, and the roster of record (the other half
   of the consumer-owned "what")
-- `profiles` — per-VM NixOS configs; the primary consumer of this flake
+- `archetypes` — the VM framework; pins this flake as its `secrets` input and is its primary consumer
+- `profiles` — machine profile definitions (does not import this flake)
 - `vm` — framework NixOS/Home Manager modules and the agenix app re-export
 - `nexus` — host config and provisioning; injects VM host keys so agenix can
   decrypt on first boot
