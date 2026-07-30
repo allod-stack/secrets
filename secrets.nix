@@ -12,4 +12,5 @@ in {
   "secrets/vm-host-keys/nexus-ssh.age".publicKeys = [ hostKey ];
   "secrets/vm-host-keys/allod-dev-ssh.age".publicKeys = [ hostKey ];
   "secrets/vm-host-keys/privacy-1-ssh.age".publicKeys = [ hostKey ];
+  "secrets/vm-host-keys/microvm-test-ssh.age".publicKeys = [ hostKey ];
 }

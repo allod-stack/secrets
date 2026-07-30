@@ -33,7 +33,13 @@
       inherit (vm) sshKeyName;
       forgeUser = identity.forgeUser;
       gpgSigningKey = identity.gpgSigningKey;
-      forgeTokenFile = ./secrets + "/forgejo-https-token-${name}.age";
+      # A dev machine that does not push does not need a Forge token. Opting
+      # out keeps a throwaway machine from requiring credential material that
+      # only a human can mint, which would otherwise gate its very existence.
+      forgeTokenFile =
+        if vm.forgeAccess or true
+        then ./secrets + "/forgejo-https-token-${name}.age"
+        else null;
       agentTokenFile = ./secrets + "/agent-pr-token.age";
       gpgPublicKeyFile = null;
     }) identity.devVMs;
