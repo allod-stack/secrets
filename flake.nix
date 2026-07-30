@@ -28,19 +28,31 @@
           (file: type: type == "regular" && lib.hasSuffix "-ssh.age" file)
           (builtins.readDir vmHostKeyDir));
 
-    devIdentities = builtins.mapAttrs (name: vm: {
+    devIdentities = builtins.mapAttrs (name: vm:
+      let
+        # A dev machine that does not push does not need Forge credentials.
+        # Opting out keeps a throwaway machine from requiring credential
+        # material that only a human can mint, which would otherwise gate its
+        # very existence. One flag nulls both files: the per-machine Forge
+        # HTTPS token and the shared agent PR token. The agent token must
+        # follow the flag because a non-pushing machine is not a recipient of
+        # the shared ciphertext — handing it the file would deploy a secret
+        # the machine cannot decrypt, failing at first activation. The
+        # archetypes dev builder asserts the two files stay paired.
+        forgeAccess = vm.forgeAccess or true;
+      in {
       inherit (identity) username forgeHost forgePort;
       inherit (vm) sshKeyName;
       forgeUser = identity.forgeUser;
       gpgSigningKey = identity.gpgSigningKey;
-      # A dev machine that does not push does not need a Forge token. Opting
-      # out keeps a throwaway machine from requiring credential material that
-      # only a human can mint, which would otherwise gate its very existence.
       forgeTokenFile =
-        if vm.forgeAccess or true
+        if forgeAccess
         then ./secrets + "/forgejo-https-token-${name}.age"
         else null;
-      agentTokenFile = ./secrets + "/agent-pr-token.age";
+      agentTokenFile =
+        if forgeAccess
+        then ./secrets + "/agent-pr-token.age"
+        else null;
       gpgPublicKeyFile = null;
     }) identity.devVMs;
 
