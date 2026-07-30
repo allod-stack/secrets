@@ -14,6 +14,9 @@ rec {
 
   devVMs = {
     allod-dev = { sshKeyName = "allod_vm"; };
+    # Purpose-made machine for proving the microvm.nix runtime. Disposable by
+    # design: nothing depends on it, so it can be destroyed and rebuilt.
+    microvm-test = { sshKeyName = "microvm_test"; };
   };
 
   privacyVMs = {
@@ -25,6 +28,11 @@ rec {
       hostname = "192.0.2.10";
       user = "allod";
       identityFile = "~/.ssh/allod_vm";
+    };
+    microvm-test = {
+      hostname = "192.0.2.12";
+      user = "allod";
+      identityFile = "~/.ssh/microvm_test";
     };
     privacy-1 = {
       hostname = "192.0.2.11";

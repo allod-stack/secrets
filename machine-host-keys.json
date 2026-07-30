@@ -10,5 +10,9 @@
   "privacy-1": {
     "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMYbFta9wmcAFLM5ZJE8va0nIxyJ6jsX6ZWGTK/DNYKJ privacy-1",
     "staged": null
+  },
+  "microvm-test": {
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC8FKc3L+toEElMjtGIxw51qeC8dnHO8drM+QyflScLC microvm-test",
+    "staged": null
   }
 }
