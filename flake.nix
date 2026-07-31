@@ -37,8 +37,9 @@
         # HTTPS token and the shared agent PR token. The agent token must
         # follow the flag because a non-pushing machine is not a recipient of
         # the shared ciphertext — handing it the file would deploy a secret
-        # the machine cannot decrypt, failing at first activation. The
-        # archetypes dev builder asserts the two files stay paired.
+        # the machine cannot decrypt, failing at first activation. Keeping the
+        # two paired is this template's job: the dev builder treats each file
+        # as independently optional and does not check them against each other.
         forgeAccess = vm.forgeAccess or true;
       in {
       inherit (identity) username forgeHost forgePort;
