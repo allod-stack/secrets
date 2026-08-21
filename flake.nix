@@ -14,9 +14,27 @@
     lib = nixpkgs.lib;
     identity = import ./identity.nix;
 
-    credentials = import ./credentials.nix;
-    secretsNix = import ./secrets.nix;
     machineHostKeys = builtins.fromJSON (builtins.readFile ./machine-host-keys.json);
+    piCredentialsJson = builtins.fromJSON (builtins.readFile ./pi-credentials.json);
+    secretsNix = import ./secrets.nix;
+    mkPiCredentialContract = import ./lib/pi-credential-contract.nix { inherit lib; };
+    piCredentialContract = mkPiCredentialContract {
+      registry = piCredentialsJson;
+      machines = inventory.lib.machines;
+      devVMs = identity.devVMs;
+      inherit machineHostKeys;
+      nexusName = identity.hostname;
+      ciphertextRoot = ./secrets;
+      declaredRecipients = secretsNix;
+    };
+    baseCredentials = import ./credentials.nix;
+    piCredentialInventoryCollisions = lib.intersectLists
+      (builtins.attrNames baseCredentials)
+      (builtins.attrNames piCredentialContract.credentialInventory);
+    credentials =
+      assert lib.assertMsg (piCredentialInventoryCollisions == [])
+        "pi-credential-registry: derived inventory collides with existing credentials: ${lib.concatStringsSep ", " piCredentialInventoryCollisions}";
+      baseCredentials // piCredentialContract.credentialInventory;
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =
       lib.mapAttrs'
@@ -55,6 +73,8 @@
         then ./secrets + "/agent-pr-token.age"
         else null;
       gpgPublicKeyFile = null;
+      piCredentials = piCredentialContract.projections.${name}.credentials;
+      piProviders = piCredentialContract.projections.${name}.providers;
     }) identity.devVMs;
 
     privacyIdentities = builtins.mapAttrs (_: vm: {
@@ -83,6 +103,15 @@
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
+    lib.piCredentials = piCredentialContract.registry;
+    lib.piCredentialCiphertextPaths = piCredentialContract.ciphertextPaths;
+    lib.piProviderCredentials = piCredentialContract.providerCredentials;
+    lib.piCredentialInventory = piCredentialContract.credentialInventory;
+    lib.piCredentialRecipients = piCredentialContract.recipients;
+    lib.piCredentialProjections = piCredentialContract.projections;
+    lib.validatePiProviderReferences = piCredentialContract.validateProviderReferences;
+    lib.mkPiCredentialContract = mkPiCredentialContract;
+    lib.consumedInventorySource = inventory;
 
     checks = lib.genAttrs inventory.lib.supportedPlatforms (checkSystem:
       let
@@ -121,6 +150,127 @@
           pkgs.runCommand "external-ssh-trust-targets-check" {} ''
             echo "external SSH trust target validation passed"
             touch $out
+          '';
+
+        pi-credential-registry =
+          let
+            fixtureRegistry = {
+              shared = {
+                targets = [ "dev-a" "dev-b" ];
+                providers = [ "alpha" "beta" ];
+                rotationStrategy = "overlap";
+              };
+            };
+            fixtureMachines = {
+              dev-a = { type = "dev"; runtime = "libvirt"; };
+              dev-b = { type = "dev"; runtime = "libvirt"; };
+              privacy-a = { type = "privacy"; runtime = "libvirt"; };
+              nexus = { type = "hypervisor"; };
+            };
+            fixtureDevVMs = {
+              dev-a = {};
+              dev-b = {};
+            };
+            fixtureKeys = {
+              nexus = { active = "nexus-active"; staged = "nexus-staged"; };
+              dev-a = { active = "dev-a-active"; staged = null; };
+              dev-b = { active = "dev-b-active"; staged = "dev-b-staged"; };
+              privacy-a = { active = "privacy-a-active"; staged = null; };
+            };
+            fixtureArgs = {
+              registry = fixtureRegistry;
+              machines = fixtureMachines;
+              devVMs = fixtureDevVMs;
+              machineHostKeys = fixtureKeys;
+              nexusName = "nexus";
+              ciphertextRoot = "/synthetic-secrets";
+              ciphertextExists = _: true;
+            };
+            fixtureWithoutDeclared = mkPiCredentialContract fixtureArgs;
+            fixture = mkPiCredentialContract (fixtureArgs // {
+              declaredRecipients = fixtureWithoutDeclared.recipients;
+            });
+            rejects = args:
+              !(builtins.tryEval
+                (builtins.deepSeq (mkPiCredentialContract args) true)).success;
+            rejectsProviderReferences = known:
+              !(builtins.tryEval
+                (builtins.deepSeq (fixture.validateProviderReferences known) true)).success;
+
+            schemaSabotage = fixtureArgs // {
+              registry.shared = fixtureRegistry.shared // { unexpected = true; };
+            };
+            referenceSabotage = fixtureArgs // {
+              registry = fixtureRegistry // {
+                second = {
+                  targets = [ "privacy-a" ];
+                  providers = [ "alpha" ];
+                  rotationStrategy = "in-place";
+                };
+              };
+              ciphertextExists = _: false;
+            };
+            recipientSabotage = fixtureArgs // {
+              declaredRecipients = fixtureWithoutDeclared.recipients // {
+                "secrets/pi-credentials/shared.age".publicKeys = [
+                  "nexus-active"
+                  "dev-a-active"
+                  "dev-b-active"
+                  "dev-b-staged"
+                ];
+              };
+            };
+
+            actualPiSecrets = lib.filterAttrs
+              (path: _: lib.hasPrefix "secrets/pi-credentials/" path)
+              secretsNix;
+          in
+          assert lib.assertMsg (piCredentialContract.registry == {})
+            "pi-credential-registry: public registry must stay empty";
+          assert lib.assertMsg (piCredentialContract.credentialInventory == {})
+            "pi-credential-registry: empty registry generated credential inventory";
+          assert lib.assertMsg (piCredentialContract.recipients == {})
+            "pi-credential-registry: empty registry generated recipients";
+          assert lib.assertMsg (piCredentialContract.providerCredentials == {})
+            "pi-credential-registry: empty registry generated provider references";
+          assert lib.assertMsg (actualPiSecrets == {})
+            "pi-credential-registry: empty registry generated secrets.nix entries";
+          assert lib.assertMsg (fixture.providerCredentials == {
+            alpha = "shared";
+            beta = "shared";
+          }) "pi-credential-registry: provider-to-credential projection drifted";
+          assert lib.assertMsg (fixture.recipients == {
+            "secrets/pi-credentials/shared.age".publicKeys = [
+              "nexus-active"
+              "nexus-staged"
+              "dev-a-active"
+              "dev-b-active"
+              "dev-b-staged"
+            ];
+          }) "pi-credential-registry: recipient derivation drifted";
+          assert lib.assertMsg (fixture.projections.dev-a.providers == {
+            alpha = "shared";
+            beta = "shared";
+          }) "pi-credential-registry: per-VM provider projection drifted";
+          assert lib.assertMsg (
+            builtins.attrNames fixture.projections.dev-a.credentials == [ "shared" ]
+            && fixture.projections.dev-a.credentials.shared.providers == [ "alpha" "beta" ]
+          ) "pi-credential-registry: per-VM credential projection drifted";
+          assert lib.assertMsg (
+            fixture.validateProviderReferences [ "alpha" "beta" ]
+            == fixture.providerCredentials
+          ) "pi-credential-registry: provider reference validator returned the wrong projection";
+          assert lib.assertMsg (rejects schemaSabotage)
+            "pi-credential-registry: schema sabotage was accepted";
+          assert lib.assertMsg (rejects referenceSabotage)
+            "pi-credential-registry: target/provider/ciphertext sabotage was accepted";
+          assert lib.assertMsg (rejects recipientSabotage)
+            "pi-credential-registry: recipient drift sabotage was accepted";
+          assert lib.assertMsg (rejectsProviderReferences [ "alpha" ])
+            "pi-credential-registry: unknown provider sabotage was accepted";
+          pkgs.runCommand "pi-credential-registry-check" {} ''
+            echo "Pi credential registry validation and sabotage passed"
+            touch "$out"
           '';
 
         credential-inventory =
