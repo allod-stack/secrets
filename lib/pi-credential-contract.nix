@@ -10,65 +10,21 @@
   declaredRecipients ? null,
 }:
 let
-  idPattern = "^[a-z0-9][a-z0-9-]*$";
-  expectedFields = [ "providers" "rotationStrategy" "targets" ];
-  validStrategies = [ "overlap" "in-place" ];
-  unique = values: lib.unique values;
+  schema = import ./pi-credential-schema.nix { inherit registry; };
+  inherit (schema)
+    allProviders
+    credentialIds
+    duplicateProviders
+    providersFor
+    safeRegistry
+    targetsFor
+    unique
+    validId
+    ;
   duplicates = values:
     builtins.filter
       (value: builtins.length (builtins.filter (other: other == value) values) > 1)
       (unique values);
-  validId = value:
-    builtins.isString value && builtins.match idPattern value != null;
-
-  registryIsAttrs = builtins.isAttrs registry;
-  safeRegistry = if registryIsAttrs then registry else {};
-  credentialIds = builtins.attrNames safeRegistry;
-
-  entryIsAttrs = id: builtins.isAttrs safeRegistry.${id};
-  field = id: name: fallback:
-    if entryIsAttrs id && builtins.hasAttr name safeRegistry.${id}
-    then safeRegistry.${id}.${name}
-    else fallback;
-  targetsFor = id:
-    let value = field id "targets" [];
-    in if builtins.isList value then value else [];
-  providersFor = id:
-    let value = field id "providers" [];
-    in if builtins.isList value then value else [];
-
-  badCredentialIds = builtins.filter (id: !(validId id)) credentialIds;
-  nonAttrEntries = builtins.filter (id: !(entryIsAttrs id)) credentialIds;
-  badFields = builtins.filter
-    (id:
-      entryIsAttrs id
-      && builtins.sort builtins.lessThan (builtins.attrNames safeRegistry.${id})
-         != expectedFields)
-    credentialIds;
-  badTargets = builtins.filter
-    (id:
-      let values = field id "targets" null;
-      in !(builtins.isList values)
-         || values == []
-         || !(builtins.all validId values)
-         || builtins.length values != builtins.length (unique values))
-    credentialIds;
-  badProviders = builtins.filter
-    (id:
-      let values = field id "providers" null;
-      in !(builtins.isList values)
-         || values == []
-         || !(builtins.all validId values)
-         || builtins.length values != builtins.length (unique values))
-    credentialIds;
-  badStrategies = builtins.filter
-    (id:
-      let value = field id "rotationStrategy" null;
-      in !(builtins.isString value) || !(builtins.elem value validStrategies))
-    credentialIds;
-
-  allProviders = builtins.concatLists (map providersFor credentialIds);
-  duplicateProviders = duplicates allProviders;
   allTargets = unique (builtins.concatLists (map targetsFor credentialIds));
   unknownTargets = builtins.filter
     (target: !(builtins.isString target) || !(builtins.hasAttr target machines))
@@ -120,14 +76,7 @@ let
     presentMachineNames);
   duplicateRecipientKeys = duplicates allRecipientKeys;
 
-  schemaErrors =
-    lib.optional (!registryIsAttrs) "registry must be an object"
-    ++ lib.optional (badCredentialIds != []) "invalid credential IDs: ${lib.concatStringsSep ", " badCredentialIds}"
-    ++ lib.optional (nonAttrEntries != []) "entries must be objects: ${lib.concatStringsSep ", " nonAttrEntries}"
-    ++ lib.optional (badFields != []) "entries have missing or unknown fields: ${lib.concatStringsSep ", " badFields}"
-    ++ lib.optional (badTargets != []) "targets must be non-empty unique ID lists: ${lib.concatStringsSep ", " badTargets}"
-    ++ lib.optional (badProviders != []) "providers must be non-empty unique ID lists: ${lib.concatStringsSep ", " badProviders}"
-    ++ lib.optional (badStrategies != []) "invalid rotationStrategy: ${lib.concatStringsSep ", " badStrategies}";
+  schemaErrors = schema.errors;
 
   referenceErrors =
     lib.optional (duplicateProviders != []) "providers referenced by multiple credentials: ${lib.concatStringsSep ", " duplicateProviders}"

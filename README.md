@@ -118,6 +118,7 @@ pi-credentials.json           Pi credential -> providers/targets/rotation strate
 secrets.nix                   agenix recipient map (.age path -> recipient public keys)
 lib/pi-credential-contract.nix validates and derives Pi credential projections
 lib/pi-credential-recipients.nix standalone recipient generator used by agenix
+lib/pi-credential-schema.nix shared strict schema for flake and standalone agenix paths
 machine-host-keys.json        per-machine SSH host public keys (active/staged)
 forge-ssh-keys.json           forge git SSH key registry
 forgejo-token-groups.json     Forgejo HTTPS-token deployment + local-auth-refresh map

@@ -196,18 +196,46 @@
             rejectsProviderReferences = known:
               !(builtins.tryEval
                 (builtins.deepSeq (fixture.validateProviderReferences known) true)).success;
+            rejectsStandaloneRecipients = registry:
+              !(builtins.tryEval (builtins.deepSeq
+                (import ./lib/pi-credential-recipients.nix {
+                  inherit registry;
+                  machineHostKeys = fixtureKeys;
+                  nexusName = "nexus";
+                })
+                true)).success;
 
             schemaSabotage = fixtureArgs // {
               registry.shared = fixtureRegistry.shared // { unexpected = true; };
             };
-            referenceSabotage = fixtureArgs // {
+            standaloneSchemaSabotage = {
+              "../escape" = {
+                targets = [ "dev-a" ];
+                providers = [];
+                rotationStrategy = "bad";
+                unexpected = true;
+              };
+            };
+            duplicateProviderSabotage = fixtureArgs // {
               registry = fixtureRegistry // {
                 second = {
-                  targets = [ "privacy-a" ];
+                  targets = [ "dev-a" ];
                   providers = [ "alpha" ];
                   rotationStrategy = "in-place";
                 };
               };
+            };
+            unsupportedTargetSabotage = fixtureArgs // {
+              registry.shared = fixtureRegistry.shared // {
+                targets = [ "privacy-a" ];
+              };
+            };
+            unknownTargetSabotage = fixtureArgs // {
+              registry.shared = fixtureRegistry.shared // {
+                targets = [ "missing-dev" ];
+              };
+            };
+            missingCiphertextSabotage = fixtureArgs // {
               ciphertextExists = _: false;
             };
             recipientSabotage = fixtureArgs // {
@@ -218,6 +246,11 @@
                   "dev-b-active"
                   "dev-b-staged"
                 ];
+              };
+            };
+            duplicateRecipientKeySabotage = fixtureArgs // {
+              machineHostKeys = fixtureKeys // {
+                dev-a = fixtureKeys.dev-a // { active = "nexus-active"; };
               };
             };
 
@@ -262,10 +295,20 @@
           ) "pi-credential-registry: provider reference validator returned the wrong projection";
           assert lib.assertMsg (rejects schemaSabotage)
             "pi-credential-registry: schema sabotage was accepted";
-          assert lib.assertMsg (rejects referenceSabotage)
-            "pi-credential-registry: target/provider/ciphertext sabotage was accepted";
+          assert lib.assertMsg (rejectsStandaloneRecipients standaloneSchemaSabotage)
+            "pi-credential-registry: standalone recipient schema sabotage was accepted";
+          assert lib.assertMsg (rejects duplicateProviderSabotage)
+            "pi-credential-registry: duplicate-provider sabotage was accepted";
+          assert lib.assertMsg (rejects unsupportedTargetSabotage)
+            "pi-credential-registry: unsupported-target sabotage was accepted";
+          assert lib.assertMsg (rejects unknownTargetSabotage)
+            "pi-credential-registry: unknown-target sabotage was accepted";
+          assert lib.assertMsg (rejects missingCiphertextSabotage)
+            "pi-credential-registry: missing-ciphertext sabotage was accepted";
           assert lib.assertMsg (rejects recipientSabotage)
             "pi-credential-registry: recipient drift sabotage was accepted";
+          assert lib.assertMsg (rejects duplicateRecipientKeySabotage)
+            "pi-credential-registry: duplicate-recipient-key sabotage was accepted";
           assert lib.assertMsg (rejectsProviderReferences [ "alpha" ])
             "pi-credential-registry: unknown provider sabotage was accepted";
           pkgs.runCommand "pi-credential-registry-check" {} ''
