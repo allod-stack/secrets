@@ -18,6 +18,7 @@ let
     providersFor
     safeRegistry
     targetsFor
+    tokensFor
     unique
     validId
     ;
@@ -43,11 +44,19 @@ let
          || !(builtins.hasAttr target devVMs))
     knownTargets;
 
-  relativeCiphertextPath = id: "secrets/pi-credentials/${id}.age";
-  ciphertextPath = id: ciphertextRoot + "/pi-credentials/${id}.age";
+  # Each named token owns one ciphertext under the credential's directory.
+  relativeCiphertextPath = id: token: "secrets/pi-credentials/${id}/${token}.age";
+  ciphertextPath = id: token: ciphertextRoot + "/pi-credentials/${id}/${token}.age";
+  # Only well-formed names can derive a path; malformed ones are already a
+  # schema error and must not turn path derivation into an interpolation crash.
+  tokenPairs = builtins.concatLists (map
+    (id: map
+      (token: { credential = id; inherit token; })
+      (builtins.filter schema.validTokenName (tokensFor id)))
+    credentialIds);
   missingCiphertexts = builtins.filter
-    (id: !(ciphertextExists (ciphertextPath id)))
-    credentialIds;
+    (pair: !(ciphertextExists (ciphertextPath pair.credential pair.token)))
+    tokenPairs;
 
   referencedMachineNames = unique ([ nexusName ] ++ knownTargets);
   missingMachineKeys = builtins.filter
@@ -82,7 +91,7 @@ let
     lib.optional (duplicateProviders != []) "providers referenced by multiple credentials: ${lib.concatStringsSep ", " duplicateProviders}"
     ++ lib.optional (unknownTargets != []) "unknown targets: ${lib.concatStringsSep ", " unknownTargets}"
     ++ lib.optional (unsupportedTargets != []) "targets must be libvirt dev VMs with identities: ${lib.concatStringsSep ", " unsupportedTargets}"
-    ++ lib.optional (missingCiphertexts != []) "missing ciphertexts: ${lib.concatStringsSep ", " (map relativeCiphertextPath missingCiphertexts)}";
+    ++ lib.optional (missingCiphertexts != []) "missing ciphertexts: ${lib.concatMapStringsSep ", " (pair: relativeCiphertextPath pair.credential pair.token) missingCiphertexts}";
 
   derivedRecipients =
     if schemaErrors == [] && unknownTargets == [] && missingMachineKeys == [] && badMachineKeys == []
@@ -123,11 +132,13 @@ let
       kind = "service";
       owner = "pi";
       public_key = null;
-      consumers = [ {
-        type = "agenix";
-        repo = "secrets";
-        secret = relativeCiphertextPath credential;
-      } ];
+      consumers = map
+        (token: {
+          type = "agenix";
+          repo = "secrets";
+          secret = relativeCiphertextPath credential token;
+        })
+        (tokensFor credential);
       rotation_state = "active";
     })
     safeRegistry;
@@ -141,10 +152,18 @@ let
         (_: credential: builtins.hasAttr credential targetCredentials)
         providerCredentialsRaw;
     in {
+      # Names and paths only: no endpoint metadata and no bearer value ever
+      # reaches a per-VM projection.
       credentials = builtins.mapAttrs
         (credential: entry: {
-          file = ciphertextPath credential;
           providers = entry.providers;
+          tokens = builtins.listToAttrs (map
+            (token: {
+              name = token;
+              value.file = ciphertextPath credential token;
+            })
+            entry.tokens);
+          defaultToken = entry.defaultToken;
         })
         targetCredentials;
       providers = targetProviderCredentials;
@@ -181,7 +200,11 @@ in
 {
   inherit diagnostics validateProviderReferences;
   registry = checkedRegistry;
-  ciphertextPaths = builtins.mapAttrs (credential: _: ciphertextPath credential) checkedRegistry;
+  ciphertextPaths = builtins.mapAttrs
+    (credential: _: builtins.listToAttrs (map
+      (token: { name = token; value = ciphertextPath credential token; })
+      (tokensFor credential)))
+    checkedRegistry;
   credentialInventory = builtins.seq checkedRegistry credentialInventoryRaw;
   providerCredentials = builtins.seq checkedRegistry providerCredentialsRaw;
   projections = builtins.seq checkedRegistry projectionsRaw;

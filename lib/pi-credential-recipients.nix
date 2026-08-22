@@ -46,10 +46,17 @@ assert builtins.seq checkedRegistry true;
 assert missingMachineKeys == [];
 assert badMachineKeys == [];
 assert !duplicateRecipientKeys;
-builtins.listToAttrs (map
-  (credential: {
-    name = "secrets/pi-credentials/${credential}.age";
-    value.publicKeys = unique (builtins.concatLists
-      (map recipientsFor (unique ([ nexusName ] ++ checkedRegistry.${credential}.targets))));
-  })
-  entryNames)
+builtins.listToAttrs (builtins.concatLists (map
+  (credential:
+    let
+      # Every named token of a credential shares one recipient set: the
+      # ciphertexts differ only in which bearer they carry.
+      publicKeys = unique (builtins.concatLists
+        (map recipientsFor (unique ([ nexusName ] ++ checkedRegistry.${credential}.targets))));
+    in map
+      (token: {
+        name = "secrets/pi-credentials/${credential}/${token}.age";
+        value = { inherit publicKeys; };
+      })
+      checkedRegistry.${credential}.tokens)
+  entryNames))

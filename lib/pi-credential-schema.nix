@@ -1,8 +1,8 @@
 { registry }:
 let
   idPattern = "^[a-z0-9][a-z0-9-]*$";
-  expectedFields = [ "providers" "rotationStrategy" "targets" ];
-  validStrategies = [ "overlap" "in-place" ];
+  tokenPattern = "^[a-z][a-z0-9-]{0,62}$";
+  expectedFields = [ "defaultToken" "providers" "targets" "tokens" ];
   unique = builtins.foldl'
     (acc: value: if builtins.elem value acc then acc else acc ++ [ value ])
     [];
@@ -12,13 +12,16 @@ let
       (unique values);
   validId = value:
     builtins.isString value && builtins.match idPattern value != null;
+  validTokenName = value:
+    builtins.isString value && builtins.match tokenPattern value != null;
 
   registryIsAttrs = builtins.isAttrs registry;
   safeRegistry = if registryIsAttrs then registry else {};
   credentialIds = builtins.attrNames safeRegistry;
   entryIsAttrs = id: builtins.isAttrs safeRegistry.${id};
+  hasField = id: name: entryIsAttrs id && builtins.hasAttr name safeRegistry.${id};
   field = id: name: fallback:
-    if entryIsAttrs id && builtins.hasAttr name safeRegistry.${id}
+    if hasField id name
     then safeRegistry.${id}.${name}
     else fallback;
   targetsFor = id:
@@ -26,6 +29,9 @@ let
     in if builtins.isList value then value else [];
   providersFor = id:
     let value = field id "providers" [];
+    in if builtins.isList value then value else [];
+  tokensFor = id:
+    let value = field id "tokens" [];
     in if builtins.isList value then value else [];
 
   badCredentialIds = builtins.filter (id: !(validId id)) credentialIds;
@@ -52,10 +58,21 @@ let
          || !(builtins.all validId values)
          || builtins.length values != builtins.length (unique values))
     credentialIds;
-  badStrategies = builtins.filter
+  badTokens = builtins.filter
     (id:
-      let value = field id "rotationStrategy" null;
-      in !(builtins.isString value) || !(builtins.elem value validStrategies))
+      let values = field id "tokens" null;
+      in !(builtins.isList values)
+         || values == []
+         || !(builtins.all validTokenName values)
+         || builtins.length values != builtins.length (unique values))
+    credentialIds;
+  badDefaultTokens = builtins.filter
+    (id:
+      !(hasField id "defaultToken")
+      || (let value = safeRegistry.${id}.defaultToken;
+          in value != null
+             && !(builtins.isString value
+                  && builtins.elem value (tokensFor id))))
     credentialIds;
 
   allProviders = builtins.concatLists (map providersFor credentialIds);
@@ -68,7 +85,8 @@ let
     ++ (if badFields == [] then [] else [ "entries have missing or unknown fields: ${builtins.concatStringsSep ", " badFields}" ])
     ++ (if badTargets == [] then [] else [ "targets must be non-empty unique ID lists: ${builtins.concatStringsSep ", " badTargets}" ])
     ++ (if badProviders == [] then [] else [ "providers must be non-empty unique ID lists: ${builtins.concatStringsSep ", " badProviders}" ])
-    ++ (if badStrategies == [] then [] else [ "invalid rotationStrategy: ${builtins.concatStringsSep ", " badStrategies}" ]);
+    ++ (if badTokens == [] then [] else [ "tokens must be non-empty unique token-name lists: ${builtins.concatStringsSep ", " badTokens}" ])
+    ++ (if badDefaultTokens == [] then [] else [ "defaultToken must be null or one listed token: ${builtins.concatStringsSep ", " badDefaultTokens}" ]);
 
   checkedRegistry =
     if errors != []
@@ -87,7 +105,9 @@ in
     providersFor
     safeRegistry
     targetsFor
+    tokensFor
     unique
     validId
+    validTokenName
     ;
 }

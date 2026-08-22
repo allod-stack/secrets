@@ -158,7 +158,14 @@
               shared = {
                 targets = [ "dev-a" "dev-b" ];
                 providers = [ "alpha" "beta" ];
-                rotationStrategy = "overlap";
+                tokens = [ "primary" "secondary" ];
+                defaultToken = "primary";
+              };
+              solo = {
+                targets = [ "dev-b" ];
+                providers = [ "gamma" ];
+                tokens = [ "only" ];
+                defaultToken = null;
               };
             };
             fixtureMachines = {
@@ -205,14 +212,19 @@
                 })
                 true)).success;
 
-            schemaSabotage = fixtureArgs // {
-              registry.shared = fixtureRegistry.shared // { unexpected = true; };
+            withShared = overrides: fixtureArgs // {
+              registry = fixtureRegistry // {
+                shared = fixtureRegistry.shared // overrides;
+              };
             };
+
+            schemaSabotage = withShared { unexpected = true; };
             standaloneSchemaSabotage = {
               "../escape" = {
                 targets = [ "dev-a" ];
                 providers = [];
-                rotationStrategy = "bad";
+                tokens = [];
+                defaultToken = "absent";
                 unexpected = true;
               };
             };
@@ -221,26 +233,43 @@
                 second = {
                   targets = [ "dev-a" ];
                   providers = [ "alpha" ];
-                  rotationStrategy = "in-place";
+                  tokens = [ "primary" ];
+                  defaultToken = "primary";
                 };
               };
             };
-            unsupportedTargetSabotage = fixtureArgs // {
-              registry.shared = fixtureRegistry.shared // {
-                targets = [ "privacy-a" ];
+            unsupportedTargetSabotage = withShared { targets = [ "privacy-a" ]; };
+            unknownTargetSabotage = withShared { targets = [ "missing-dev" ]; };
+            # A record still carrying the retired rotation strategy is now an
+            # unknown field, not a tolerated leftover.
+            rotationStrategySabotage = withShared { rotationStrategy = "overlap"; };
+            missingTokenFieldSabotage = fixtureArgs // {
+              registry = fixtureRegistry // {
+                shared = builtins.removeAttrs fixtureRegistry.shared [ "tokens" ];
               };
             };
-            unknownTargetSabotage = fixtureArgs // {
-              registry.shared = fixtureRegistry.shared // {
-                targets = [ "missing-dev" ];
-              };
+            emptyTokensSabotage = withShared {
+              tokens = [];
+              defaultToken = null;
             };
+            duplicateTokenSabotage = withShared {
+              tokens = [ "primary" "primary" ];
+            };
+            invalidTokenNameSabotage = withShared {
+              tokens = [ "primary" "9-leading-digit" ];
+            };
+            unlistedDefaultSabotage = withShared { defaultToken = "absent"; };
+            nonStringDefaultSabotage = withShared { defaultToken = true; };
             missingCiphertextSabotage = fixtureArgs // {
               ciphertextExists = _: false;
             };
+            missingOneCiphertextSabotage = fixtureArgs // {
+              ciphertextExists = path:
+                path != "/synthetic-secrets/pi-credentials/shared/secondary.age";
+            };
             recipientSabotage = fixtureArgs // {
               declaredRecipients = fixtureWithoutDeclared.recipients // {
-                "secrets/pi-credentials/shared.age".publicKeys = [
+                "secrets/pi-credentials/shared/secondary.age".publicKeys = [
                   "nexus-active"
                   "dev-a-active"
                   "dev-b-active"
@@ -257,6 +286,29 @@
             actualPiSecrets = lib.filterAttrs
               (path: _: lib.hasPrefix "secrets/pi-credentials/" path)
               secretsNix;
+
+            # Every token of a credential shares that credential's recipient set.
+            sharedRecipients = [
+              "nexus-active"
+              "nexus-staged"
+              "dev-a-active"
+              "dev-b-active"
+              "dev-b-staged"
+            ];
+            soloRecipients = [
+              "nexus-active"
+              "nexus-staged"
+              "dev-b-active"
+              "dev-b-staged"
+            ];
+            sharedProjection = {
+              providers = [ "alpha" "beta" ];
+              tokens = {
+                primary.file = "/synthetic-secrets/pi-credentials/shared/primary.age";
+                secondary.file = "/synthetic-secrets/pi-credentials/shared/secondary.age";
+              };
+              defaultToken = "primary";
+            };
           in
           assert lib.assertMsg (piCredentialContract.registry == {})
             "pi-credential-registry: public registry must stay empty";
@@ -271,26 +323,57 @@
           assert lib.assertMsg (fixture.providerCredentials == {
             alpha = "shared";
             beta = "shared";
+            gamma = "solo";
           }) "pi-credential-registry: provider-to-credential projection drifted";
           assert lib.assertMsg (fixture.recipients == {
-            "secrets/pi-credentials/shared.age".publicKeys = [
-              "nexus-active"
-              "nexus-staged"
-              "dev-a-active"
-              "dev-b-active"
-              "dev-b-staged"
-            ];
+            "secrets/pi-credentials/shared/primary.age".publicKeys = sharedRecipients;
+            "secrets/pi-credentials/shared/secondary.age".publicKeys = sharedRecipients;
+            "secrets/pi-credentials/solo/only.age".publicKeys = soloRecipients;
           }) "pi-credential-registry: recipient derivation drifted";
+          assert lib.assertMsg (fixture.ciphertextPaths == {
+            shared = {
+              primary = "/synthetic-secrets/pi-credentials/shared/primary.age";
+              secondary = "/synthetic-secrets/pi-credentials/shared/secondary.age";
+            };
+            solo.only = "/synthetic-secrets/pi-credentials/solo/only.age";
+          }) "pi-credential-registry: per-token ciphertext paths drifted";
+          assert lib.assertMsg (fixture.credentialInventory.shared.consumers == [
+            {
+              type = "agenix";
+              repo = "secrets";
+              secret = "secrets/pi-credentials/shared/primary.age";
+            }
+            {
+              type = "agenix";
+              repo = "secrets";
+              secret = "secrets/pi-credentials/shared/secondary.age";
+            }
+          ]) "pi-credential-registry: inventory consumers are not one per ciphertext";
           assert lib.assertMsg (fixture.projections.dev-a.providers == {
             alpha = "shared";
             beta = "shared";
           }) "pi-credential-registry: per-VM provider projection drifted";
+          assert lib.assertMsg (fixture.projections.dev-a.credentials == {
+            shared = sharedProjection;
+          }) "pi-credential-registry: per-VM credential projection drifted";
+          assert lib.assertMsg (fixture.projections.dev-b.credentials == {
+            shared = sharedProjection;
+            solo = {
+              providers = [ "gamma" ];
+              tokens.only.file = "/synthetic-secrets/pi-credentials/solo/only.age";
+              defaultToken = null;
+            };
+          }) "pi-credential-registry: default-null credential projection drifted";
           assert lib.assertMsg (
-            builtins.attrNames fixture.projections.dev-a.credentials == [ "shared" ]
-            && fixture.projections.dev-a.credentials.shared.providers == [ "alpha" "beta" ]
-          ) "pi-credential-registry: per-VM credential projection drifted";
+            builtins.attrNames fixture.registry.shared
+            == [ "defaultToken" "providers" "targets" "tokens" ]
+          ) "pi-credential-registry: validated record fields drifted from the contract";
           assert lib.assertMsg (
-            fixture.validateProviderReferences [ "alpha" "beta" ]
+            builtins.attrNames fixture.projections.dev-a.credentials.shared
+            == [ "defaultToken" "providers" "tokens" ]
+          ) "pi-credential-registry: projected credential fields drifted from the contract";
+          assert lib.assertMsg (
+            fixture.validateProviderReferences [ "alpha" "beta" "gamma" ]
             == fixture.providerCredentials
           ) "pi-credential-registry: provider reference validator returned the wrong projection";
           assert lib.assertMsg (rejects schemaSabotage)
@@ -303,13 +386,29 @@
             "pi-credential-registry: unsupported-target sabotage was accepted";
           assert lib.assertMsg (rejects unknownTargetSabotage)
             "pi-credential-registry: unknown-target sabotage was accepted";
+          assert lib.assertMsg (rejects rotationStrategySabotage)
+            "pi-credential-registry: retired rotationStrategy field was accepted";
+          assert lib.assertMsg (rejects missingTokenFieldSabotage)
+            "pi-credential-registry: missing-tokens sabotage was accepted";
+          assert lib.assertMsg (rejects emptyTokensSabotage)
+            "pi-credential-registry: empty-tokens sabotage was accepted";
+          assert lib.assertMsg (rejects duplicateTokenSabotage)
+            "pi-credential-registry: duplicate-token sabotage was accepted";
+          assert lib.assertMsg (rejects invalidTokenNameSabotage)
+            "pi-credential-registry: invalid-token-name sabotage was accepted";
+          assert lib.assertMsg (rejects unlistedDefaultSabotage)
+            "pi-credential-registry: unlisted-default sabotage was accepted";
+          assert lib.assertMsg (rejects nonStringDefaultSabotage)
+            "pi-credential-registry: non-string-default sabotage was accepted";
           assert lib.assertMsg (rejects missingCiphertextSabotage)
             "pi-credential-registry: missing-ciphertext sabotage was accepted";
+          assert lib.assertMsg (rejects missingOneCiphertextSabotage)
+            "pi-credential-registry: missing single-token ciphertext sabotage was accepted";
           assert lib.assertMsg (rejects recipientSabotage)
             "pi-credential-registry: recipient drift sabotage was accepted";
           assert lib.assertMsg (rejects duplicateRecipientKeySabotage)
             "pi-credential-registry: duplicate-recipient-key sabotage was accepted";
-          assert lib.assertMsg (rejectsProviderReferences [ "alpha" ])
+          assert lib.assertMsg (rejectsProviderReferences [ "alpha" "beta" ])
             "pi-credential-registry: unknown provider sabotage was accepted";
           pkgs.runCommand "pi-credential-registry-check" {} ''
             echo "Pi credential registry validation and sabotage passed"
