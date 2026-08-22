@@ -105,7 +105,8 @@ including a legacy `rotationStrategy`, fails evaluation:
 `providers` and `targets` are non-empty unique ID lists (`^[a-z0-9][a-z0-9-]*$`);
 a provider belongs to exactly one credential and every target must be a libvirt
 dev VM with an identity. `tokens` is a non-empty unique list of opaque token
-names (`^[a-z][a-z0-9-]{0,62}$` — a different namespace and a different pattern
+names (`^[a-z][a-z0-9-]{0,62}$`, excluding the reserved `none` pi-provider
+token-default clearing word — a different namespace and a different pattern
 from provider IDs). `defaultToken` is `null` or one of the listed names. The
 public template ships `{}`, which is valid and generates nothing.
 

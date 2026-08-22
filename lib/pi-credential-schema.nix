@@ -13,7 +13,7 @@ let
   validId = value:
     builtins.isString value && builtins.match idPattern value != null;
   validTokenName = value:
-    builtins.isString value && builtins.match tokenPattern value != null;
+    builtins.isString value && builtins.match tokenPattern value != null && value != "none";
 
   registryIsAttrs = builtins.isAttrs registry;
   safeRegistry = if registryIsAttrs then registry else {};

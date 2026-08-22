@@ -258,6 +258,9 @@
             invalidTokenNameSabotage = withShared {
               tokens = [ "primary" "9-leading-digit" ];
             };
+            reservedTokenNameSabotage = withShared {
+              tokens = [ "primary" "none" ];
+            };
             unlistedDefaultSabotage = withShared { defaultToken = "absent"; };
             nonStringDefaultSabotage = withShared { defaultToken = true; };
             missingCiphertextSabotage = fixtureArgs // {
@@ -396,6 +399,8 @@
             "pi-credential-registry: duplicate-token sabotage was accepted";
           assert lib.assertMsg (rejects invalidTokenNameSabotage)
             "pi-credential-registry: invalid-token-name sabotage was accepted";
+          assert lib.assertMsg (rejects reservedTokenNameSabotage)
+            "pi-credential-registry: reserved-token-name sabotage was accepted";
           assert lib.assertMsg (rejects unlistedDefaultSabotage)
             "pi-credential-registry: unlisted-default sabotage was accepted";
           assert lib.assertMsg (rejects nonStringDefaultSabotage)
