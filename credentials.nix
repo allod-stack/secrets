@@ -1,4 +1,5 @@
 let
+  identity = import ./identity.nix;
   machineHostKeys = builtins.fromJSON (builtins.readFile ./machine-host-keys.json);
   forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
   vmNames = builtins.attrNames machineHostKeys;
@@ -38,6 +39,28 @@ let
     }] else []
   ) vmNames));
 
+  hostEntries = builtins.listToAttrs (builtins.genList
+    (index:
+      let
+        isActive = index == 0;
+        suffix = if isActive then "" else if index == 1 then "-staged" else "-staged-${toString index}";
+      in {
+        name = "${identity.hostname}-host${suffix}";
+        value = {
+          name = "${identity.hostname}-host${suffix}";
+          kind = "machine-host";
+          owner = identity.hostname;
+          public_key = builtins.elemAt identity.hostPublicKeys index;
+          consumers = [{
+            type = "agenix";
+            repo = "secrets";
+            secret = "secrets/vm-host-keys/${identity.hostname}-ssh.age";
+          }];
+          rotation_state = if isActive then "active" else "staged";
+        };
+      })
+    (builtins.length identity.hostPublicKeys));
+
   mkForgeGitEntry = forgeKey:
     let
       data = forgeSshKeys.${forgeKey};
@@ -59,7 +82,7 @@ let
     value = mkForgeGitEntry forgeKey;
   }) forgeKeyNames);
 in
-activeEntries // stagedEntries // forgeGitEntries // {
+hostEntries // activeEntries // stagedEntries // forgeGitEntries // {
   agent-pr-token = {
     name           = "agent-pr-token";
     kind           = "agent";

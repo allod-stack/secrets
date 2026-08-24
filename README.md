@@ -58,17 +58,17 @@ This repo does **not** own:
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
 | `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map (from `forgejo-token-groups.json`) |
-| `lib.machineHostKeys` | attrs | per-machine SSH host public keys, active + staged (from `machine-host-keys.json`) |
+| `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
 | `lib.vmHostKeySecretFiles` | attrs | machine name -> path of its `*-ssh.age` host-key secret, derived by scanning `secrets/vm-host-keys/` |
 | `lib.githubCredentialTargets` | attrs | per-machine GitHub credential targets — empty in the template |
 | `lib.piCredentials` | attrs | validated `pi-credentials.json`, keyed by credential ID |
 | `lib.piCredentialCiphertextPaths` | attrs | credential ID -> token name -> derived `secrets/pi-credentials/<id>/<token>.age` path |
 | `lib.piProviderCredentials` | attrs | provider ID -> credential ID, derived from the registry |
 | `lib.piCredentialInventory` | attrs | credential-inventory entries derived for Pi ciphertexts, one consumer record per token ciphertext |
-| `lib.piCredentialRecipients` | attrs | relative Pi ciphertext path -> `{ publicKeys = [...] }`, one entry per token |
+| `lib.piCredentialRecipients` | attrs | relative Pi ciphertext path -> `{ publicKeys = [...] }`, ordered from hypervisor identity keys then target VM keys |
 | `lib.piCredentialProjections` | attrs | dev VM -> `{ credentials; providers; }` projection |
 | `lib.validatePiProviderReferences` | function | rejects provider IDs absent from a caller-supplied known-ID list and returns the provider-to-credential projection |
-| `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data |
+| `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `nexusPublicKeys` and retains a legacy machine-key fallback |
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
@@ -123,9 +123,10 @@ of SSH public keys allowed to decrypt it.
 - **VM SSH host-key secrets** (`secrets/vm-host-keys/*-ssh.age`) are encrypted to
   the host key only; `nexus` injects the decrypted host key into a VM at provision
   time (before first boot) so agenix can then unlock that VM's other secrets.
-- Recipient lists pull the **active** host key plus any **staged** key from
-  `machine-host-keys.json`, so a key rotation can encrypt to both the old and new
-  recipient during the overlap.
+- Recipient lists pull the hypervisor's **active** host key plus any **staged**
+  key from `identity.hostPublicKeys`, and target VM keys from
+  `machine-host-keys.json`, so a key rotation can encrypt to both old and new
+  recipients during the overlap.
 - A declared Pi credential holds one or more named tokens, and each token is a
   separate ciphertext encrypted to the active/staged Nexus key plus the
   active/staged keys of every target VM — one recipient set per credential,
@@ -147,7 +148,7 @@ secrets.nix                   agenix recipient map (.age path -> recipient publi
 lib/pi-credential-contract.nix validates and derives Pi credential projections
 lib/pi-credential-recipients.nix standalone recipient generator used by agenix
 lib/pi-credential-schema.nix shared strict schema for flake and standalone agenix paths
-machine-host-keys.json        per-machine SSH host public keys (active/staged)
+machine-host-keys.json        per-VM SSH host public keys (active/staged)
 forge-ssh-keys.json           forge git SSH key registry
 forgejo-token-groups.json     Forgejo HTTPS-token deployment + local-auth-refresh map
 keys/
@@ -172,7 +173,8 @@ output:
 
 - `devIdentities` / `privacyIdentities` / `nexusIdentity` / `vmUsernames` drive
   per-machine users and forge identity.
-- `machineHostKeys` / `vmHostKeySecretFiles` supply VM host-key facts and agenix
+- `nexusIdentity.sshPublicKeys` supplies ordered hypervisor recipients;
+  `machineHostKeys` / `vmHostKeySecretFiles` supply VM host-key facts and agenix
   host-key paths.
 - `credentials` / `forgeSshKeys` / `forgejoTokenGroups` / `githubCredentialTargets`
   drive token and forge-key deployment; `age.secrets` files are read straight from

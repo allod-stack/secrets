@@ -5,6 +5,7 @@
   devVMs,
   machineHostKeys,
   nexusName,
+  nexusPublicKeys ? null,
   ciphertextRoot,
   ciphertextExists ? builtins.pathExists,
   declaredRecipients ? null,
@@ -58,16 +59,23 @@ let
     (pair: !(ciphertextExists (ciphertextPath pair.credential pair.token)))
     tokenPairs;
 
-  referencedMachineNames = unique ([ nexusName ] ++ knownTargets);
+  # External callers that omit nexusPublicKeys use their historical hypervisor
+  # record as the compatibility source. New callers keep hypervisor identity
+  # out of the VM registry, so every remaining record is an independent source.
+  effectiveMachineHostKeys =
+    if nexusPublicKeys == null
+    then builtins.removeAttrs machineHostKeys [ nexusName ]
+    else machineHostKeys;
+  referencedMachineNames = builtins.attrNames effectiveMachineHostKeys;
   missingMachineKeys = builtins.filter
-    (name: !(builtins.hasAttr name machineHostKeys))
-    referencedMachineNames;
+    (name: !(builtins.hasAttr name effectiveMachineHostKeys))
+    knownTargets;
   presentMachineNames = builtins.filter
-    (name: builtins.hasAttr name machineHostKeys)
+    (name: builtins.hasAttr name effectiveMachineHostKeys)
     referencedMachineNames;
   badMachineKeys = builtins.filter
     (name:
-      let keys = machineHostKeys.${name};
+      let keys = effectiveMachineHostKeys.${name};
       in !(builtins.isAttrs keys)
          || !(keys ? active)
          || !(builtins.isString keys.active)
@@ -76,9 +84,34 @@ let
          || !(keys.staged == null
               || (builtins.isString keys.staged && keys.staged != "")))
     presentMachineNames;
-  allRecipientKeys = builtins.concatLists (map
+  legacyNexusRecordPresent = builtins.hasAttr nexusName machineHostKeys;
+  legacyNexusRecordValid = legacyNexusRecordPresent
+    && (let keys = machineHostKeys.${nexusName};
+        in builtins.isAttrs keys
+           && keys ? active
+           && builtins.isString keys.active
+           && keys.active != ""
+           && keys ? staged
+           && (keys.staged == null
+               || (builtins.isString keys.staged && keys.staged != "")));
+  resolvedNexusPublicKeys =
+    if nexusPublicKeys != null
+    then nexusPublicKeys
+    else if legacyNexusRecordValid
+    then let keys = machineHostKeys.${nexusName};
+         in [ keys.active ] ++ (if keys.staged == null then [] else [ keys.staged ])
+    else [];
+  nexusPublicKeysHaveShape = builtins.isList resolvedNexusPublicKeys
+    && resolvedNexusPublicKeys != []
+    && builtins.all (key: builtins.isString key && key != "") resolvedNexusPublicKeys;
+  safeNexusPublicKeys =
+    if nexusPublicKeysHaveShape then resolvedNexusPublicKeys else [];
+  validNexusPublicKeys = nexusPublicKeysHaveShape
+    && builtins.length safeNexusPublicKeys
+       == builtins.length (unique safeNexusPublicKeys);
+  allRecipientKeys = safeNexusPublicKeys ++ builtins.concatLists (map
     (name:
-      let keys = machineHostKeys.${name};
+      let keys = effectiveMachineHostKeys.${name};
       in if builtins.elem name badMachineKeys
          then []
          else [ keys.active ] ++ (if keys.staged == null then [] else [ keys.staged ]))
@@ -94,9 +127,16 @@ let
     ++ lib.optional (missingCiphertexts != []) "missing ciphertexts: ${lib.concatMapStringsSep ", " (pair: relativeCiphertextPath pair.credential pair.token) missingCiphertexts}";
 
   derivedRecipients =
-    if schemaErrors == [] && unknownTargets == [] && missingMachineKeys == [] && badMachineKeys == []
+    if schemaErrors == []
+       && unknownTargets == []
+       && missingMachineKeys == []
+       && badMachineKeys == []
+       && validNexusPublicKeys
+       && duplicateRecipientKeys == []
     then import ./pi-credential-recipients.nix {
-      inherit registry machineHostKeys nexusName;
+      inherit registry;
+      machineHostKeys = effectiveMachineHostKeys;
+      nexusPublicKeys = resolvedNexusPublicKeys;
     }
     else {};
 
@@ -110,6 +150,7 @@ let
   recipientErrors =
     lib.optional (missingMachineKeys != []) "recipient machines missing host keys: ${lib.concatStringsSep ", " missingMachineKeys}"
     ++ lib.optional (badMachineKeys != []) "recipient host-key records are invalid: ${lib.concatStringsSep ", " badMachineKeys}"
+    ++ lib.optional (!validNexusPublicKeys) "hypervisor recipient keys must be a non-empty unique list of non-empty strings"
     ++ lib.optional (duplicateRecipientKeys != []) "recipient host keys are duplicated: ${lib.concatStringsSep ", " duplicateRecipientKeys}"
     ++ lib.optional (declaredRecipients != null && !(builtins.isAttrs declaredRecipients)) "declared recipient map must be an object"
     ++ lib.optional (declaredPiRecipients != null && declaredPiRecipients != derivedRecipients) "declared Pi recipients drift from the credential registry";

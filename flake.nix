@@ -24,6 +24,7 @@
       devVMs = identity.devVMs;
       inherit machineHostKeys;
       nexusName = identity.hostname;
+      nexusPublicKeys = identity.hostPublicKeys;
       ciphertextRoot = ./secrets;
       declaredRecipients = secretsNix;
     };
@@ -172,24 +173,25 @@
               dev-a = { type = "dev"; runtime = "libvirt"; };
               dev-b = { type = "dev"; runtime = "libvirt"; };
               privacy-a = { type = "privacy"; runtime = "libvirt"; };
-              nexus = { type = "hypervisor"; };
+              forge-host = { type = "hypervisor"; };
             };
             fixtureDevVMs = {
               dev-a = {};
               dev-b = {};
             };
             fixtureKeys = {
-              nexus = { active = "nexus-active"; staged = "nexus-staged"; };
               dev-a = { active = "dev-a-active"; staged = null; };
               dev-b = { active = "dev-b-active"; staged = "dev-b-staged"; };
               privacy-a = { active = "privacy-a-active"; staged = null; };
             };
+            fixtureNexusPublicKeys = [ "forge-host-active" "forge-host-staged" ];
             fixtureArgs = {
               registry = fixtureRegistry;
               machines = fixtureMachines;
               devVMs = fixtureDevVMs;
               machineHostKeys = fixtureKeys;
-              nexusName = "nexus";
+              nexusName = "forge-host";
+              nexusPublicKeys = fixtureNexusPublicKeys;
               ciphertextRoot = "/synthetic-secrets";
               ciphertextExists = _: true;
             };
@@ -203,14 +205,17 @@
             rejectsProviderReferences = known:
               !(builtins.tryEval
                 (builtins.deepSeq (fixture.validateProviderReferences known) true)).success;
-            rejectsStandaloneRecipients = registry:
+            rejectsStandaloneRecipientsWith = registry: keys: nexusKeys:
               !(builtins.tryEval (builtins.deepSeq
                 (import ./lib/pi-credential-recipients.nix {
                   inherit registry;
-                  machineHostKeys = fixtureKeys;
-                  nexusName = "nexus";
+                  machineHostKeys = keys;
+                  nexusPublicKeys = nexusKeys;
                 })
                 true)).success;
+            rejectsStandaloneRecipients = registry:
+              rejectsStandaloneRecipientsWith
+                registry fixtureKeys fixtureNexusPublicKeys;
 
             withShared = overrides: fixtureArgs // {
               registry = fixtureRegistry // {
@@ -273,18 +278,43 @@
             recipientSabotage = fixtureArgs // {
               declaredRecipients = fixtureWithoutDeclared.recipients // {
                 "secrets/pi-credentials/shared/secondary.age".publicKeys = [
-                  "nexus-active"
+                  "forge-host-active"
                   "dev-a-active"
                   "dev-b-active"
                   "dev-b-staged"
                 ];
               };
             };
+            invalidNexusRecipientSabotage = fixtureArgs // {
+              nexusPublicKeys = [];
+            };
+            malformedNexusRecipientSabotage = fixtureArgs // {
+              nexusPublicKeys = "not-a-list";
+            };
+            malformedNexusRecipientDiagnostics =
+              (mkPiCredentialContract malformedNexusRecipientSabotage).diagnostics.recipients;
+            duplicateNexusRecipientSabotage = fixtureArgs // {
+              nexusPublicKeys = [ "forge-host-active" "forge-host-active" ];
+            };
             duplicateRecipientKeySabotage = fixtureArgs // {
               machineHostKeys = fixtureKeys // {
-                dev-a = fixtureKeys.dev-a // { active = "nexus-active"; };
+                dev-a = fixtureKeys.dev-a // { active = "forge-host-active"; };
               };
             };
+            untargetedDuplicateRecipientKeySabotage = fixtureArgs // {
+              machineHostKeys = fixtureKeys // {
+                privacy-a = fixtureKeys.privacy-a // { active = "forge-host-active"; };
+              };
+            };
+            compatibilityArgs = builtins.removeAttrs fixtureArgs [ "nexusPublicKeys" ] // {
+              machineHostKeys = fixtureKeys // {
+                forge-host = {
+                  active = "forge-host-active";
+                  staged = "forge-host-staged";
+                };
+              };
+            };
+            compatibilityFixture = mkPiCredentialContract compatibilityArgs;
 
             actualPiSecrets = lib.filterAttrs
               (path: _: lib.hasPrefix "secrets/pi-credentials/" path)
@@ -292,15 +322,15 @@
 
             # Every token of a credential shares that credential's recipient set.
             sharedRecipients = [
-              "nexus-active"
-              "nexus-staged"
+              "forge-host-active"
+              "forge-host-staged"
               "dev-a-active"
               "dev-b-active"
               "dev-b-staged"
             ];
             soloRecipients = [
-              "nexus-active"
-              "nexus-staged"
+              "forge-host-active"
+              "forge-host-staged"
               "dev-b-active"
               "dev-b-staged"
             ];
@@ -333,6 +363,8 @@
             "secrets/pi-credentials/shared/secondary.age".publicKeys = sharedRecipients;
             "secrets/pi-credentials/solo/only.age".publicKeys = soloRecipients;
           }) "pi-credential-registry: recipient derivation drifted";
+          assert lib.assertMsg (compatibilityFixture.recipients == fixture.recipients)
+            "pi-credential-registry: legacy constructor fallback drifted";
           assert lib.assertMsg (fixture.ciphertextPaths == {
             shared = {
               primary = "/synthetic-secrets/pi-credentials/shared/primary.age";
@@ -411,8 +443,24 @@
             "pi-credential-registry: missing single-token ciphertext sabotage was accepted";
           assert lib.assertMsg (rejects recipientSabotage)
             "pi-credential-registry: recipient drift sabotage was accepted";
+          assert lib.assertMsg (rejects invalidNexusRecipientSabotage)
+            "pi-credential-registry: empty hypervisor recipient list was accepted";
+          assert lib.assertMsg (rejects malformedNexusRecipientSabotage)
+            "pi-credential-registry: malformed hypervisor recipient list was accepted";
+          assert lib.assertMsg (malformedNexusRecipientDiagnostics == [
+            "hypervisor recipient keys must be a non-empty unique list of non-empty strings"
+          ]) "pi-credential-registry: malformed hypervisor recipient diagnostic drifted";
+          assert lib.assertMsg (rejects duplicateNexusRecipientSabotage)
+            "pi-credential-registry: duplicate hypervisor recipient was accepted";
           assert lib.assertMsg (rejects duplicateRecipientKeySabotage)
             "pi-credential-registry: duplicate-recipient-key sabotage was accepted";
+          assert lib.assertMsg (rejects untargetedDuplicateRecipientKeySabotage)
+            "pi-credential-registry: untargeted duplicate-recipient-key sabotage was accepted";
+          assert lib.assertMsg (rejectsStandaloneRecipientsWith
+            fixtureRegistry
+            untargetedDuplicateRecipientKeySabotage.machineHostKeys
+            fixtureNexusPublicKeys)
+            "pi-credential-registry: standalone untargeted duplicate-recipient-key sabotage was accepted";
           assert lib.assertMsg (rejectsProviderReferences [ "alpha" "beta" ])
             "pi-credential-registry: unknown provider sabotage was accepted";
           pkgs.runCommand "pi-credential-registry-check" {} ''

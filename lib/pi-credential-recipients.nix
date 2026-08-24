@@ -1,7 +1,7 @@
 {
   registry,
   machineHostKeys,
-  nexusName,
+  nexusPublicKeys,
 }:
 let
   schema = import ./pi-credential-schema.nix { inherit registry; };
@@ -13,15 +13,15 @@ let
   entryNames = schema.credentialIds;
 
   targetNames = unique (builtins.concatLists (map schema.targetsFor entryNames));
+  machineNames = builtins.attrNames machineHostKeys;
 
-  recipientMachineNames = unique ([ nexusName ] ++ targetNames);
   missingMachineKeys = builtins.filter
     (name: !(builtins.hasAttr name machineHostKeys))
-    recipientMachineNames;
+    targetNames;
 
   presentMachineNames = builtins.filter
     (name: builtins.hasAttr name machineHostKeys)
-    recipientMachineNames;
+    machineNames;
 
   badMachineKeys = builtins.filter
     (name:
@@ -38,21 +38,27 @@ let
   recipientsFor = name:
     let keys = machineHostKeys.${name};
     in [ keys.active ] ++ (if keys.staged == null then [] else [ keys.staged ]);
-  allRecipientKeys = builtins.concatLists (map recipientsFor presentMachineNames);
+  validNexusPublicKeys = builtins.isList nexusPublicKeys
+    && nexusPublicKeys != []
+    && builtins.all (key: builtins.isString key && key != "") nexusPublicKeys
+    && builtins.length nexusPublicKeys == builtins.length (unique nexusPublicKeys);
+  allRecipientKeys = nexusPublicKeys
+    ++ builtins.concatLists (map recipientsFor presentMachineNames);
   duplicateRecipientKeys = builtins.length allRecipientKeys
     != builtins.length (unique allRecipientKeys);
 in
 assert builtins.seq checkedRegistry true;
 assert missingMachineKeys == [];
 assert badMachineKeys == [];
+assert validNexusPublicKeys;
 assert !duplicateRecipientKeys;
 builtins.listToAttrs (builtins.concatLists (map
   (credential:
     let
       # Every named token of a credential shares one recipient set: the
       # ciphertexts differ only in which bearer they carry.
-      publicKeys = unique (builtins.concatLists
-        (map recipientsFor (unique ([ nexusName ] ++ checkedRegistry.${credential}.targets))));
+      publicKeys = nexusPublicKeys ++ builtins.concatLists
+        (map recipientsFor checkedRegistry.${credential}.targets);
     in map
       (token: {
         name = "secrets/pi-credentials/${credential}/${token}.age";

@@ -10,7 +10,7 @@ let
   piCredentialRecipients = import ./lib/pi-credential-recipients.nix {
     registry = piCredentials;
     inherit machineHostKeys;
-    nexusName = identity.hostname;
+    nexusPublicKeys = identity.hostPublicKeys;
   };
 in {
   "secrets/forgejo-https-token-allod-dev.age".publicKeys = [ hostKey ] ++ vmKeys "allod-dev";
