@@ -23,8 +23,7 @@
       machines = inventory.lib.machines;
       devVMs = identity.devVMs;
       inherit machineHostKeys;
-      nexusName = identity.hostname;
-      nexusPublicKeys = identity.hostPublicKeys;
+      hypervisorPublicKeys = identity.hostPublicKeys;
       ciphertextRoot = ./secrets;
       declaredRecipients = secretsNix;
     };
@@ -184,14 +183,13 @@
               dev-b = { active = "dev-b-active"; staged = "dev-b-staged"; };
               privacy-a = { active = "privacy-a-active"; staged = null; };
             };
-            fixtureNexusPublicKeys = [ "forge-host-active" "forge-host-staged" ];
+            fixtureHypervisorPublicKeys = [ "forge-host-active" "forge-host-staged" ];
             fixtureArgs = {
               registry = fixtureRegistry;
               machines = fixtureMachines;
               devVMs = fixtureDevVMs;
               machineHostKeys = fixtureKeys;
-              nexusName = "forge-host";
-              nexusPublicKeys = fixtureNexusPublicKeys;
+              hypervisorPublicKeys = fixtureHypervisorPublicKeys;
               ciphertextRoot = "/synthetic-secrets";
               ciphertextExists = _: true;
             };
@@ -205,17 +203,17 @@
             rejectsProviderReferences = known:
               !(builtins.tryEval
                 (builtins.deepSeq (fixture.validateProviderReferences known) true)).success;
-            rejectsStandaloneRecipientsWith = registry: keys: nexusKeys:
+            rejectsStandaloneRecipientsWith = registry: keys: hypervisorKeys:
               !(builtins.tryEval (builtins.deepSeq
                 (import ./lib/pi-credential-recipients.nix {
                   inherit registry;
                   machineHostKeys = keys;
-                  nexusPublicKeys = nexusKeys;
+                  hypervisorPublicKeys = hypervisorKeys;
                 })
                 true)).success;
             rejectsStandaloneRecipients = registry:
               rejectsStandaloneRecipientsWith
-                registry fixtureKeys fixtureNexusPublicKeys;
+                registry fixtureKeys fixtureHypervisorPublicKeys;
 
             withShared = overrides: fixtureArgs // {
               registry = fixtureRegistry // {
@@ -285,16 +283,16 @@
                 ];
               };
             };
-            invalidNexusRecipientSabotage = fixtureArgs // {
-              nexusPublicKeys = [];
+            invalidHypervisorRecipientSabotage = fixtureArgs // {
+              hypervisorPublicKeys = [];
             };
-            malformedNexusRecipientSabotage = fixtureArgs // {
-              nexusPublicKeys = "not-a-list";
+            malformedHypervisorRecipientSabotage = fixtureArgs // {
+              hypervisorPublicKeys = "not-a-list";
             };
-            malformedNexusRecipientDiagnostics =
-              (mkPiCredentialContract malformedNexusRecipientSabotage).diagnostics.recipients;
-            duplicateNexusRecipientSabotage = fixtureArgs // {
-              nexusPublicKeys = [ "forge-host-active" "forge-host-active" ];
+            malformedHypervisorRecipientDiagnostics =
+              (mkPiCredentialContract malformedHypervisorRecipientSabotage).diagnostics.recipients;
+            duplicateHypervisorRecipientSabotage = fixtureArgs // {
+              hypervisorPublicKeys = [ "forge-host-active" "forge-host-active" ];
             };
             duplicateRecipientKeySabotage = fixtureArgs // {
               machineHostKeys = fixtureKeys // {
@@ -306,7 +304,12 @@
                 privacy-a = fixtureKeys.privacy-a // { active = "forge-host-active"; };
               };
             };
-            compatibilityArgs = builtins.removeAttrs fixtureArgs [ "nexusPublicKeys" ] // {
+            missingCompatibilityNexusNameArgs =
+              builtins.removeAttrs fixtureArgs [ "hypervisorPublicKeys" ];
+            missingCompatibilityNexusNameDiagnostics =
+              (mkPiCredentialContract missingCompatibilityNexusNameArgs).diagnostics.recipients;
+            compatibilityArgs = builtins.removeAttrs fixtureArgs [ "hypervisorPublicKeys" ] // {
+              nexusName = "forge-host";
               machineHostKeys = fixtureKeys // {
                 forge-host = {
                   active = "forge-host-active";
@@ -443,15 +446,20 @@
             "pi-credential-registry: missing single-token ciphertext sabotage was accepted";
           assert lib.assertMsg (rejects recipientSabotage)
             "pi-credential-registry: recipient drift sabotage was accepted";
-          assert lib.assertMsg (rejects invalidNexusRecipientSabotage)
+          assert lib.assertMsg (rejects invalidHypervisorRecipientSabotage)
             "pi-credential-registry: empty hypervisor recipient list was accepted";
-          assert lib.assertMsg (rejects malformedNexusRecipientSabotage)
+          assert lib.assertMsg (rejects malformedHypervisorRecipientSabotage)
             "pi-credential-registry: malformed hypervisor recipient list was accepted";
-          assert lib.assertMsg (malformedNexusRecipientDiagnostics == [
+          assert lib.assertMsg (malformedHypervisorRecipientDiagnostics == [
             "hypervisor recipient keys must be a non-empty unique list of non-empty strings"
           ]) "pi-credential-registry: malformed hypervisor recipient diagnostic drifted";
-          assert lib.assertMsg (rejects duplicateNexusRecipientSabotage)
+          assert lib.assertMsg (rejects duplicateHypervisorRecipientSabotage)
             "pi-credential-registry: duplicate hypervisor recipient was accepted";
+          assert lib.assertMsg (rejects missingCompatibilityNexusNameArgs)
+            "pi-credential-registry: compatibility fallback accepted a missing nexusName";
+          assert lib.assertMsg (missingCompatibilityNexusNameDiagnostics == [
+            "nexusName is required when hypervisorPublicKeys is omitted"
+          ]) "pi-credential-registry: compatibility nexusName diagnostic drifted";
           assert lib.assertMsg (rejects duplicateRecipientKeySabotage)
             "pi-credential-registry: duplicate-recipient-key sabotage was accepted";
           assert lib.assertMsg (rejects untargetedDuplicateRecipientKeySabotage)
@@ -459,7 +467,7 @@
           assert lib.assertMsg (rejectsStandaloneRecipientsWith
             fixtureRegistry
             untargetedDuplicateRecipientKeySabotage.machineHostKeys
-            fixtureNexusPublicKeys)
+            fixtureHypervisorPublicKeys)
             "pi-credential-registry: standalone untargeted duplicate-recipient-key sabotage was accepted";
           assert lib.assertMsg (rejectsProviderReferences [ "alpha" "beta" ])
             "pi-credential-registry: unknown provider sabotage was accepted";

@@ -1,7 +1,7 @@
 {
   registry,
   machineHostKeys,
-  nexusPublicKeys,
+  hypervisorPublicKeys,
 }:
 let
   schema = import ./pi-credential-schema.nix { inherit registry; };
@@ -38,11 +38,11 @@ let
   recipientsFor = name:
     let keys = machineHostKeys.${name};
     in [ keys.active ] ++ (if keys.staged == null then [] else [ keys.staged ]);
-  validNexusPublicKeys = builtins.isList nexusPublicKeys
-    && nexusPublicKeys != []
-    && builtins.all (key: builtins.isString key && key != "") nexusPublicKeys
-    && builtins.length nexusPublicKeys == builtins.length (unique nexusPublicKeys);
-  allRecipientKeys = nexusPublicKeys
+  validHypervisorPublicKeys = builtins.isList hypervisorPublicKeys
+    && hypervisorPublicKeys != []
+    && builtins.all (key: builtins.isString key && key != "") hypervisorPublicKeys
+    && builtins.length hypervisorPublicKeys == builtins.length (unique hypervisorPublicKeys);
+  allRecipientKeys = hypervisorPublicKeys
     ++ builtins.concatLists (map recipientsFor presentMachineNames);
   duplicateRecipientKeys = builtins.length allRecipientKeys
     != builtins.length (unique allRecipientKeys);
@@ -50,14 +50,14 @@ in
 assert builtins.seq checkedRegistry true;
 assert missingMachineKeys == [];
 assert badMachineKeys == [];
-assert validNexusPublicKeys;
+assert validHypervisorPublicKeys;
 assert !duplicateRecipientKeys;
 builtins.listToAttrs (builtins.concatLists (map
   (credential:
     let
       # Every named token of a credential shares one recipient set: the
       # ciphertexts differ only in which bearer they carry.
-      publicKeys = nexusPublicKeys ++ builtins.concatLists
+      publicKeys = hypervisorPublicKeys ++ builtins.concatLists
         (map recipientsFor checkedRegistry.${credential}.targets);
     in map
       (token: {

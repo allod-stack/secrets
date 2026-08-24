@@ -68,7 +68,7 @@ This repo does **not** own:
 | `lib.piCredentialRecipients` | attrs | relative Pi ciphertext path -> `{ publicKeys = [...] }`, ordered from hypervisor identity keys then target VM keys |
 | `lib.piCredentialProjections` | attrs | dev VM -> `{ credentials; providers; }` projection |
 | `lib.validatePiProviderReferences` | function | rejects provider IDs absent from a caller-supplied known-ID list and returns the provider-to-credential projection |
-| `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `nexusPublicKeys` and retains a legacy machine-key fallback |
+| `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `hypervisorPublicKeys`, while `nexusName` is required only for the legacy machine-key fallback |
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
