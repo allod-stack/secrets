@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787277999,
-        "narHash": "sha256-UE4KmhuatSKmRQ3B6T0r0i01vClImLo/ObVSUyrDnis=",
+        "lastModified": 1788319838,
+        "narHash": "sha256-6+C7ZDidH3ub1m0XcKR6knoLPUo5KPwMPUfNSe8Z2jI=",
         "ref": "refs/heads/master",
-        "rev": "1a1ca7ac88d565792ef6f528c486e0c3a56e0dc0",
-        "revCount": 17,
+        "rev": "b58b8f064ce0c52603193e2f1402bce93c317e07",
+        "revCount": 22,
         "type": "git",
         "url": "https://forge.anarch.diy/allod/inventory.git"
       },
