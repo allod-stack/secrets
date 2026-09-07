@@ -2,7 +2,7 @@
   description = "Allod public identity template — synthetic values for agent-isolated VMs";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     inventory = {
       url = "git+https://forge.anarch.diy/allod/inventory.git";
       inputs.nixpkgs.follows = "nixpkgs";
