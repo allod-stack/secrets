@@ -53,7 +53,7 @@ This repo does **not** own:
 | `lib.identity` | attrs | raw `identity.nix` — username, email, forge host/port/user, host public key(s), VM rosters, SSH host aliases, external SSH trust targets |
 | `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, forge/agent token file paths, GPG signing key |
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
-| `lib.nexusIdentity` | attrs | host identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null or an age path) |
+| `lib.nexusIdentity` | attrs | host identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null, or a Nix path to an `.age` file) |
 | `lib.vmUsernames` | attrs | machine name -> login username |
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
@@ -154,9 +154,10 @@ forgejo-token-groups.json     Forgejo HTTPS-token deployment + local-auth-refres
 keys/
   allod_vm.pub                forge git SSH public key (checked against the registry)
 secrets/
-  *.age                       encrypted forge tokens and forge git key; also the
-                              userForgejoTokenFile / siteHostingConfigFile ciphertexts a
-                              deployment names, placed at
+  *.age                       encrypted forge tokens and forge git key; in a
+                              deployment, also the ciphertexts named by
+                              userForgejoTokenFile and siteHostingConfigFile,
+                              which the hypervisor places at
                               /home/<user>/.config/git/forgejo-token and
                               /home/<user>/.config/rclone/rclone.conf, mode 0600 each
   vm-host-keys/*.age          encrypted per-VM SSH host keys
@@ -180,10 +181,13 @@ output:
 - `nexusIdentity.sshPublicKeys` supplies ordered hypervisor recipients;
   `machineHostKeys` / `vmHostKeySecretFiles` supply VM host-key facts and agenix
   host-key paths.
-- `nexusIdentity.userForgejoTokenFile` / `siteHostingConfigFile`, when non-null,
-  drive `age.secrets` entries that place the host user's Forgejo token and site
-  hosting rclone config in that user's home directory; null means the file is
-  absent and no agenix activation runs for it. The shape:
+- `nexusIdentity.userForgejoTokenFile` / `siteHostingConfigFile` are read by the
+  hypervisor builder (allod/archetypes#74) with `or null`, so either side can
+  land first. When non-null, each drives an `age.secrets` entry that places the
+  host user's Forgejo token or site hosting rclone config in that user's home
+  directory; null means the file is absent and no agenix activation runs for
+  it. Each value is a Nix path, never a string, the same form the dev-VM token
+  fields take. The shape:
 
   | Field | Decrypts to | Recipients | Placed at |
   | --- | --- | --- | --- |
