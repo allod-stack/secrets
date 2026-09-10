@@ -86,6 +86,10 @@
       sshPublicKey = identity.hostPublicKey;
       sshPublicKeys = identity.hostPublicKeys;
       forgeTokenFile = null;
+      # A deployment sets each of these to a Nix path, e.g. `./secrets + "/<name>.age"`
+      # (a path, not a string; the same spelling the dev-VM token fields above use).
+      userForgejoTokenFile = null;
+      siteHostingConfigFile = null;
     };
 
     vmUsernames =

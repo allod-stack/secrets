@@ -53,7 +53,7 @@ This repo does **not** own:
 | `lib.identity` | attrs | raw `identity.nix` — username, email, forge host/port/user, host public key(s), VM rosters, SSH host aliases, external SSH trust targets |
 | `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, forge/agent token file paths, GPG signing key |
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
-| `lib.nexusIdentity` | attrs | host identity: hostname, host SSH public keys, forge coordinates |
+| `lib.nexusIdentity` | attrs | host identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null or an age path) |
 | `lib.vmUsernames` | attrs | machine name -> login username |
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
@@ -154,7 +154,11 @@ forgejo-token-groups.json     Forgejo HTTPS-token deployment + local-auth-refres
 keys/
   allod_vm.pub                forge git SSH public key (checked against the registry)
 secrets/
-  *.age                       encrypted forge tokens and forge git key
+  *.age                       encrypted forge tokens and forge git key; also the
+                              userForgejoTokenFile / siteHostingConfigFile ciphertexts a
+                              deployment names, placed at
+                              /home/<user>/.config/git/forgejo-token and
+                              /home/<user>/.config/rclone/rclone.conf, mode 0600 each
   vm-host-keys/*.age          encrypted per-VM SSH host keys
   pi-credentials/<credential>/<token>.age
                               private-fork Pi credential ciphertexts, one per named token;
@@ -176,6 +180,27 @@ output:
 - `nexusIdentity.sshPublicKeys` supplies ordered hypervisor recipients;
   `machineHostKeys` / `vmHostKeySecretFiles` supply VM host-key facts and agenix
   host-key paths.
+- `nexusIdentity.userForgejoTokenFile` / `siteHostingConfigFile`, when non-null,
+  drive `age.secrets` entries that place the host user's Forgejo token and site
+  hosting rclone config in that user's home directory; null means the file is
+  absent and no agenix activation runs for it. The shape:
+
+  | Field | Decrypts to | Recipients | Placed at |
+  | --- | --- | --- | --- |
+  | `userForgejoTokenFile` | the raw Forgejo API token of the human account | hypervisor host keys only | `/home/<user>/.config/git/forgejo-token`, mode 0600 |
+  | `siteHostingConfigFile` | one complete rclone stanza: `[shared]`, `type = ftp`, `host`, `user`, `pass` in rclone's obscured form, `explicit_tls = true` | hypervisor host keys only | `/home/<user>/.config/rclone/rclone.conf`, mode 0600 |
+
+  The rclone stanza is stored whole, not as a bare password: rclone reads its
+  config file and nothing else, so storing exactly what it reads means no
+  activation step reshapes a secret. Obscuring is reversible by anyone with
+  rclone, so the stanza is as sensitive as the password underneath it — that is
+  why the recipient set is the host alone, not the full VM fleet.
+
+  Each non-null file needs a `credentials.nix` consumer record
+  `{ type = "agenix"; repo = "secrets"; secret = "secrets/<name>.age"; }` plus a
+  matching `secrets.nix` recipient line; `credential-inventory` refuses an age
+  file with no record and a record with no file. The public template commits no
+  new ciphertext for either field, because both are null.
 - `credentials` / `forgeSshKeys` / `forgejoTokenGroups` / `githubCredentialTargets`
   drive token and forge-key deployment; `age.secrets` files are read straight from
   `${secrets}/<secret path>`.
