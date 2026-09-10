@@ -55,7 +55,7 @@ This repo does **not** own:
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
 | `lib.nexusIdentity` | attrs | host identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null, or a Nix path to an `.age` file) |
 | `lib.vmUsernames` | attrs | machine name -> login username |
-| `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` |
+| `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
 | `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map (from `forgejo-token-groups.json`) |
 | `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
@@ -207,6 +207,16 @@ output:
   matching `secrets.nix` recipient line; `credential-inventory` refuses an age
   file with no record and a record with no file. The public template commits no
   new ciphertext for either field, because both are null.
+
+  A credential lands in two halves with different authors. An agent's PR
+  carries the non-secret half — the `credentials.nix` entry with
+  `rotation_state = "pending"`, the `secrets.nix` line, and the rotation
+  registry entry — and is green on its own: `credential-inventory` requires
+  the age file to be *absent* while the entry is `pending`. The host operator
+  then runs `allod secret create <name>` on that branch, which encrypts the
+  value to the recipients `secrets.nix` declares, writes the file, and flips
+  the state to `active`, where the check requires the file present. A
+  `pending` entry with a file, or an `active` one without, fails the check.
 - `credentials` / `forgeSshKeys` / `forgejoTokenGroups` / `githubCredentialTargets`
   drive token and forge-key deployment; `age.secrets` files are read straight from
   `${secrets}/<secret path>`.

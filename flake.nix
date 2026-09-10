@@ -497,7 +497,10 @@
           ) mhkNames);
           mhkHasDuplicateKeys = builtins.length mhkAllKeys != builtins.length (lib.unique mhkAllKeys);
           validKinds = [ "user" "machine-host" "forge-git" "agent" "service" ];
-          validStates = [ "active" "staged" "retiring" "retired" ];
+          # 'pending' is an entry an agent declared before the host produced its
+          # ciphertext: legal on a reviewable branch, so the non-secret half of a
+          # credential can land green ahead of the secret half.
+          validStates = [ "pending" "active" "staged" "retiring" "retired" ];
 
           invalidSchema = builtins.filter (e:
             !(builtins.elem e.kind validKinds) ||
@@ -544,7 +547,7 @@
           ) activeForgeGit;
 
           secretsRepoFiles = lib.flatten (map (e:
-            map (c: { inherit (e) name; inherit (c) secret; }) (
+            map (c: { inherit (e) name rotation_state; inherit (c) secret; }) (
               builtins.filter (c:
                 (c.type == "agenix" && c.repo == "secrets") || c.type == "forge-key-secret"
               ) e.consumers
@@ -576,10 +579,18 @@
         assert lib.assertMsg (forgeGitBadConsumers == [])
           "credential-inventory: forge-git needs one forge-key-secret + one forgejo-ssh consumer: ${lib.concatMapStringsSep ", " (e: e.name) forgeGitBadConsumers}";
         pkgs.runCommand "credential-inventory-check" {} ''
-          ${lib.concatMapStringsSep "\n" (c: ''
-            test -f ${self}/${c.secret} \
-              || { echo "ERROR: missing ${c.secret} for ${c.name}"; exit 1; }
-          '') secretsRepoFiles}
+          # A pending entry's file must be absent: present means the state was
+          # never flipped to active, and the check refuses rather than let a
+          # stale 'pending' ride into a rebuild. Every other state needs the file.
+          ${lib.concatMapStringsSep "\n" (c:
+            if c.rotation_state == "pending" then ''
+              test ! -e ${self}/${c.secret} \
+                || { echo "ERROR: ${c.secret} exists but ${c.name} is pending; land it with 'allod secret create ${c.name}' or set rotation_state to active"; exit 1; }
+            '' else ''
+              test -f ${self}/${c.secret} \
+                || { echo "ERROR: missing ${c.secret} for ${c.name}"; exit 1; }
+            ''
+          ) secretsRepoFiles}
 
           ${lib.concatMapStringsSep "\n" (r: ''
             test -f ${self}/keys/${r.forgeKey}.pub \
