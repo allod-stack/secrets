@@ -200,8 +200,10 @@ output:
   rclone, so the stanza is as sensitive as the password underneath it — that is
   why the recipient set is the host alone, not the full VM fleet.
 
-  Each non-null file needs a `credentials.nix` consumer record
-  `{ type = "agenix"; repo = "secrets"; secret = "secrets/<name>.age"; }` plus a
+  Each non-null file needs a `credentials.nix` entry shaped like the existing
+  `agent-pr-token` one (`name`, `kind`, `owner`, `public_key = null`,
+  `consumers`, `rotation_state`) whose consumer is
+  `{ type = "agenix"; repo = "secrets"; secret = "secrets/<name>.age"; }`, plus a
   matching `secrets.nix` recipient line; `credential-inventory` refuses an age
   file with no record and a record with no file. The public template commits no
   new ciphertext for either field, because both are null.
