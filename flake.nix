@@ -78,6 +78,15 @@
           else
             let
               hasValue = builtins.hasAttr "value" credential;
+              # A credential's own "credential" name field is itself
+              # unvalidated at this point, so a malformed registry entry
+              # (missing name, or a non-string name) must not make the format
+              # refusal's own message throw: toString aborts evaluation on an
+              # attrset or null instead of producing a diagnostic.
+              credentialName =
+                if builtins.hasAttr "credential" credential && builtins.isString credential.credential
+                then credential.credential
+                else "?";
               targets = if builtins.hasAttr "targets" credential && builtins.isList credential.targets
                 then credential.targets
                 else [];
@@ -102,7 +111,7 @@
               lib.optional missingTargets "credential targets must be a list" ++
               lib.optional emptyTargets "credential must declare at least one target" ++
               lib.optional (builtins.hasAttr "format" credential)
-                "credential '${toString (credential.credential or "?")}' carries 'format', which the registry no longer accepts; declare a value template instead" ++
+                "credential '${credentialName}' carries 'format', which the registry no longer accepts; declare a value template instead" ++
               lib.optional (builtins.elem "non-string" verifyIssueKinds)
                 "target verify must be a string command" ++
               lib.optional
@@ -117,7 +126,7 @@
           else
             let
               # A credential carrying format is refused on its own account, so
-              # its filtered out here too: any stray value.encode it also
+              # it is filtered out here too: any stray value.encode it also
               # carries never forces or breaks its group's compatibility check.
               encodings = map credentialEncoding
                 (builtins.filter isNewShapeCredential group.credentials);
@@ -339,6 +348,21 @@
                   })
                 ];
                 diagnostic = "credential 'legacy-shaped-token' carries 'format', which the registry no longer accepts; declare a value template instead";
+              }
+              {
+                # A malformed registry entry can carry format with a
+                # non-string (or missing) name; the refusal must still
+                # produce its one diagnostic, with a placeholder name,
+                # rather than aborting evaluation.
+                name = "format-field-non-string-name";
+                registry = withGroup "tokens" [
+                  newPlainCredential
+                  (newPlainCredential // {
+                    credential = {};
+                    format = "raw";
+                  })
+                ];
+                diagnostic = "credential '?' carries 'format', which the registry no longer accepts; declare a value template instead";
               }
               {
                 name = "non-string-verify";
