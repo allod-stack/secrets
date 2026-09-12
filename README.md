@@ -72,7 +72,7 @@ This repo does **not** own:
 | `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `hypervisorPublicKeys`, while `nexusName` is required only for the legacy machine-key fallback |
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
-| `checks.<platform>.credential-registry` | derivation | validates the public Forgejo credential registry plus positive legacy/new coexistence and one sabotage witness per template/verification validator |
+| `checks.<platform>.credential-registry` | derivation | validates the public Forgejo credential registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 
@@ -127,14 +127,12 @@ rclone lsd shared:
 tailscale status
 ```
 
-During the migration window, a credential is either legacy (`format` plus a
-structured `verify.type` on every target) or new (optional `value` plus string
-`verify` commands). The shapes cannot mix on one credential. Existing group
-metadata, including `local_auth_refresh`, remains structured and unchanged;
-the registry check requires only the group `credentials` list for this contract.
-New-shape credentials in one group must agree on `value.encode`, because one
-prompted value serves that group. A legacy credential declares no encoding and
-is exempt, so a group migrates one credential at a time.
+A credential carrying the retired `format` field, or a target whose `verify`
+is not a string, fails the check. Existing group metadata, including
+`local_auth_refresh`, remains structured and unchanged; the registry check
+requires only the group `credentials` list for this contract. Credentials in
+one group must agree on `value.encode`, because one prompted value serves
+that group.
 
 ## Pi credential registry schema
 
