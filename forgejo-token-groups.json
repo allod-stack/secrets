@@ -4,9 +4,15 @@
       {
         "credential": "forgejo-https-token-allod-dev",
         "secret_path": "secrets/forgejo-https-token-allod-dev.age",
-        "format": "credential-store-url",
+        "value": {
+          "template": "https://allod-agent:{secret}@forge.anarch.diy"
+        },
         "targets": [
-          { "system": "allod-dev", "deployed_path": "/root/.git-credentials" }
+          {
+            "system": "allod-dev",
+            "deployed_path": "/root/.git-credentials",
+            "verify": "sudo env HOME=/root GIT_TERMINAL_PROMPT=0 git ls-remote https://forge.anarch.diy/allod/tools.git HEAD"
+          }
         ]
       }
     ],

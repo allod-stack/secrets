@@ -35,6 +35,103 @@
       assert lib.assertMsg (piCredentialInventoryCollisions == [])
         "pi-credential-registry: derived inventory collides with existing credentials: ${lib.concatStringsSep ", " piCredentialInventoryCollisions}";
       baseCredentials // piCredentialContract.credentialInventory;
+    credentialEncodings = [ "rclone-obscure" ];
+    credentialRegistryDiagnostics = registry:
+      let
+        isNonEmptyString = value: builtins.isString value && value != "";
+        isBlankString = value: builtins.match "[[:space:]]*" value != null;
+        isOneLineCommand = value:
+          builtins.isString value &&
+          !(isBlankString value) &&
+          !(lib.hasInfix "\n" value) &&
+          !(lib.hasInfix "\r" value);
+        hasExactlyOneSecret = template:
+          builtins.isString template &&
+          builtins.length (lib.splitString "{secret}" template) == 2;
+        isLegacyVerify = verify:
+          builtins.isAttrs verify &&
+          builtins.hasAttr "type" verify &&
+          isNonEmptyString verify.type;
+        valueDiagnostics = value:
+          if !builtins.isAttrs value then [ "value must be an attribute set" ]
+          else
+            let
+              fields = builtins.attrNames value;
+              allowedFields = [ "encode" "template" ];
+              extraFields = builtins.filter (field: !(builtins.elem field allowedFields)) fields;
+              missingTemplate = !(builtins.hasAttr "template" value);
+              badTemplate = !missingTemplate && !(hasExactlyOneSecret value.template);
+              badEncode = builtins.hasAttr "encode" value &&
+                (!(builtins.isString value.encode) || !(builtins.elem value.encode credentialEncodings));
+            in
+              lib.optional (extraFields != []) "value has fields outside template and optional encode" ++
+              lib.optional missingTemplate "value is missing template" ++
+              lib.optional badTemplate "value.template must contain exactly one {secret}" ++
+              lib.optional badEncode "value.encode is not an exported encoding";
+        isNewShapeCredential = credential:
+          builtins.isAttrs credential && !(builtins.hasAttr "format" credential);
+        credentialEncoding = credential:
+          if builtins.isAttrs credential &&
+             builtins.hasAttr "value" credential &&
+             builtins.isAttrs credential.value &&
+             builtins.hasAttr "encode" credential.value &&
+             builtins.isString credential.value.encode
+          then credential.value.encode
+          else null;
+        credentialDiagnostics = credential:
+          if !builtins.isAttrs credential then [ "credential must be an attribute set" ]
+          else
+            let
+              hasFormat = builtins.hasAttr "format" credential;
+              hasValue = builtins.hasAttr "value" credential;
+              targets = if builtins.hasAttr "targets" credential && builtins.isList credential.targets
+                then credential.targets
+                else [];
+              missingTargets = !(builtins.hasAttr "targets" credential) || !builtins.isList credential.targets;
+              emptyTargets = !missingTargets && targets == [];
+              targetVerifies = map (target:
+                if builtins.isAttrs target && builtins.hasAttr "verify" target
+                then target.verify
+                else null
+              ) targets;
+              legacyDiagnostics =
+                lib.optional (!isNonEmptyString credential.format) "legacy format must be a non-empty string" ++
+                lib.optional (builtins.any (verify: !(isLegacyVerify verify)) targetVerifies)
+                  "legacy targets require structured verify.type";
+              newDiagnostics =
+                lib.optional (builtins.any (verify: !(isOneLineCommand verify)) targetVerifies)
+                  "new targets require a non-empty one-line verify command" ++
+                (if hasValue then valueDiagnostics credential.value else []);
+            in
+              lib.optional missingTargets "credential targets must be a list" ++
+              lib.optional emptyTargets "credential must declare at least one target" ++
+              lib.optional (hasFormat && hasValue) "legacy format and new value fields cannot mix" ++
+              (if hasFormat then legacyDiagnostics else newDiagnostics);
+        groupDiagnostics = group:
+          if !builtins.isAttrs group ||
+             !(builtins.hasAttr "credentials" group) ||
+             !builtins.isList group.credentials
+          then [ "group credentials must be a list" ]
+          else
+            let
+              # Only new-shape credentials declare an encoding, so a legacy credential
+              # never forces its group's encoding and a group migrates one credential
+              # at a time.
+              encodings = map credentialEncoding
+                (builtins.filter isNewShapeCredential group.credentials);
+            in
+              lib.optional (group.credentials == []) "group must declare at least one credential" ++
+              lib.concatMap credentialDiagnostics group.credentials ++
+              lib.optional (builtins.length (lib.unique encodings) > 1)
+                "credentials in a group must use one compatible encoding";
+      in
+        if !builtins.isAttrs registry then [ "registry must be an attribute set" ]
+        else lib.concatMap (name: groupDiagnostics registry.${name}) (builtins.attrNames registry);
+    validateCredentialRegistry = registry:
+      let diagnostics = credentialRegistryDiagnostics registry;
+      in assert lib.assertMsg (diagnostics == [])
+        "credential-registry: ${lib.concatStringsSep "; " diagnostics}";
+        registry;
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =
       lib.mapAttrs'
@@ -101,9 +198,10 @@
     lib.nexusIdentity = nexusIdentity;
     lib.vmUsernames = vmUsernames;
     lib.credentials = credentials;
+    lib.credentialEncodings = credentialEncodings;
     lib.identity = identity;
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
-    lib.forgejoTokenGroups = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
+    lib.forgejoTokenGroups = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json));
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
@@ -153,6 +251,243 @@
             "external-ssh-trust-targets: unknown recovery value: ${lib.concatStringsSep ", " badRecovery}";
           pkgs.runCommand "external-ssh-trust-targets-check" {} ''
             echo "external SSH trust target validation passed"
+            touch $out
+          '';
+
+        credential-registry =
+          let
+            current = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
+
+            legacyCredential = {
+              credential = "legacy-token";
+              secret_path = "secrets/legacy-token.age";
+              format = "raw";
+              targets = [{
+                system = "fixture-host";
+                verify = { type = "fixture-verify"; };
+              }];
+            };
+            newPlainCredential = {
+              credential = "new-plain-token";
+              secret_path = "secrets/new-plain-token.age";
+              targets = [{
+                system = "fixture-host";
+                verify = "test -n \"$TOKEN\"";
+              }];
+            };
+            encodedCredential = {
+              credential = "new-encoded-password";
+              secret_path = "secrets/new-encoded-password.age";
+              value = {
+                template = "[shared]\ntype = ftp\npass = {secret}\n";
+                encode = "rclone-obscure";
+              };
+              targets = [{
+                system = "fixture-host";
+                verify = "rclone lsd shared:";
+              }];
+            };
+
+            positive = {
+              # Legacy and new shapes side by side in one group.
+              coexistence.credentials = [ legacyCredential newPlainCredential ];
+              encoded.credentials = [ encodedCredential ];
+              # One credential of the group already migrated to an encoded template
+              # while the other is still legacy.
+              migrating.credentials = [
+                (legacyCredential // {
+                  credential = "migrating-legacy-password";
+                  secret_path = "secrets/migrating-legacy-password.age";
+                })
+                (encodedCredential // {
+                  credential = "migrating-encoded-password";
+                  secret_path = "secrets/migrating-encoded-password.age";
+                })
+              ];
+            };
+            withGroup = name: credentials:
+              positive // { ${name} = positive.${name} // { inherit credentials; }; };
+
+            # Each fixture must produce exactly the one diagnostic it names, so no
+            # fixture can pass by tripping a neighbouring rule.
+            sabotages = [
+              {
+                name = "registry-shape";
+                registry = [ positive.coexistence ];
+                diagnostic = "registry must be an attribute set";
+              }
+              {
+                name = "group-schema";
+                registry = positive // { malformed = { credentials = {}; }; };
+                diagnostic = "group credentials must be a list";
+              }
+              {
+                name = "empty-group";
+                registry = withGroup "coexistence" [];
+                diagnostic = "group must declare at least one credential";
+              }
+              {
+                name = "credential-shape";
+                registry = withGroup "coexistence" [ "legacy-token" ];
+                diagnostic = "credential must be an attribute set";
+              }
+              {
+                name = "target-list";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { targets = {}; })
+                ];
+                diagnostic = "credential targets must be a list";
+              }
+              {
+                name = "empty-targets";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { targets = []; })
+                ];
+                diagnostic = "credential must declare at least one target";
+              }
+              {
+                name = "legacy-new-mix";
+                registry = withGroup "coexistence" [
+                  (legacyCredential // { value = { template = "{secret}"; }; })
+                  newPlainCredential
+                ];
+                diagnostic = "legacy format and new value fields cannot mix";
+              }
+              {
+                name = "legacy-format";
+                registry = withGroup "coexistence" [
+                  (legacyCredential // { format = ""; })
+                  newPlainCredential
+                ];
+                diagnostic = "legacy format must be a non-empty string";
+              }
+              {
+                name = "legacy-verify";
+                registry = withGroup "coexistence" [
+                  (legacyCredential // {
+                    targets = [{ system = "fixture-host"; verify = "fixture verify"; }];
+                  })
+                  newPlainCredential
+                ];
+                diagnostic = "legacy targets require structured verify.type";
+              }
+              {
+                name = "structured-verify-on-new";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // {
+                    targets = [{ system = "fixture-host"; verify = { type = "fixture-verify"; }; }];
+                  })
+                ];
+                diagnostic = "new targets require a non-empty one-line verify command";
+              }
+              {
+                name = "missing-verify";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { targets = [{ system = "fixture-host"; }]; })
+                ];
+                diagnostic = "new targets require a non-empty one-line verify command";
+              }
+              {
+                name = "blank-verify";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // {
+                    targets = [{ system = "fixture-host"; verify = "   "; }];
+                  })
+                ];
+                diagnostic = "new targets require a non-empty one-line verify command";
+              }
+              {
+                name = "multi-line-verify";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // {
+                    targets = [{ system = "fixture-host"; verify = "echo one\necho two"; }];
+                  })
+                ];
+                diagnostic = "new targets require a non-empty one-line verify command";
+              }
+              {
+                name = "value-shape";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { value = "https://user:{secret}@host"; })
+                ];
+                diagnostic = "value must be an attribute set";
+              }
+              {
+                name = "missing-template";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { value = { encode = "rclone-obscure"; }; })
+                ];
+                diagnostic = "value is missing template";
+              }
+              {
+                name = "value-fields";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // {
+                    value = { template = "{secret}"; unexpected = true; };
+                  })
+                ];
+                diagnostic = "value has fields outside template and optional encode";
+              }
+              {
+                name = "missing-placeholder";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { value = { template = "missing placeholder"; }; })
+                ];
+                diagnostic = "value.template must contain exactly one {secret}";
+              }
+              {
+                name = "repeated-placeholder";
+                registry = withGroup "coexistence" [
+                  legacyCredential
+                  (newPlainCredential // { value = { template = "{secret}:{secret}"; }; })
+                ];
+                diagnostic = "value.template must contain exactly one {secret}";
+              }
+              {
+                name = "unexported-encoder";
+                registry = withGroup "encoded" [
+                  (encodedCredential // {
+                    value = encodedCredential.value // { encode = "not-exported"; };
+                  })
+                ];
+                diagnostic = "value.encode is not an exported encoding";
+              }
+              {
+                name = "incompatible-encoding";
+                registry = withGroup "coexistence" [ newPlainCredential encodedCredential ];
+                diagnostic = "credentials in a group must use one compatible encoding";
+              }
+            ];
+
+            diagnosticsText = registry:
+              "[${lib.concatStringsSep "; " (credentialRegistryDiagnostics registry)}]";
+            tripsOnlyItsOwnRule = sabotage:
+              credentialRegistryDiagnostics sabotage.registry == [ sabotage.diagnostic ] &&
+              !(builtins.tryEval
+                (builtins.deepSeq (validateCredentialRegistry sabotage.registry) true)).success;
+            vacuousSabotages = builtins.filter (sabotage: !(tripsOnlyItsOwnRule sabotage)) sabotages;
+            vacuousText = lib.concatMapStringsSep "; "
+              (sabotage: "${sabotage.name} wanted [${sabotage.diagnostic}] got ${diagnosticsText sabotage.registry}")
+              vacuousSabotages;
+          in
+          assert lib.assertMsg (credentialRegistryDiagnostics current == [])
+            "credential-registry: public registry failed validation: ${diagnosticsText current}";
+          assert lib.assertMsg (credentialRegistryDiagnostics positive == [])
+            "credential-registry: positive legacy/new coexistence fixtures failed validation: ${diagnosticsText positive}";
+          assert lib.assertMsg (vacuousSabotages == [])
+            "credential-registry: sabotage fixtures accepted or tripping the wrong rule: ${vacuousText}";
+          pkgs.runCommand "credential-registry-check" {} ''
+            echo "credential registry validation and ${toString (builtins.length sabotages)} sabotage fixtures passed"
             touch $out
           '';
 

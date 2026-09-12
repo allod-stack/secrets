@@ -57,7 +57,8 @@ This repo does **not** own:
 | `lib.vmUsernames` | attrs | machine name -> login username |
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
-| `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map (from `forgejo-token-groups.json`) |
+| `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map, including each credential's rendered-value template and verification commands (from `forgejo-token-groups.json`); validated on read, so a malformed registry fails every consumer |
+| `lib.credentialEncodings` | list of strings | supported credential value encoders; currently `rclone-obscure` |
 | `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
 | `lib.vmHostKeySecretFiles` | attrs | machine name -> path of its `*-ssh.age` host-key secret, derived by scanning `secrets/vm-host-keys/` |
 | `lib.githubCredentialTargets` | attrs | per-machine GitHub credential targets — empty in the template |
@@ -71,6 +72,7 @@ This repo does **not** own:
 | `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `hypervisorPublicKeys`, while `nexusName` is required only for the legacy machine-key fallback |
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
+| `checks.<platform>.credential-registry` | derivation | validates the public Forgejo credential registry plus positive legacy/new coexistence and one sabotage witness per template/verification validator |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 
@@ -85,6 +87,54 @@ to `profiles.lib.piProviders` and must force
 `validatePiProviderReferences (builtins.attrNames profiles.lib.piProviders)` so
 unknown providers fail at the consumption seam without creating another flake
 input edge here.
+
+## Forgejo credential registry schema
+
+`forgejo-token-groups.json` declares the non-secret text around a credential and
+the command that verifies each deployed target. A new credential omits `value`
+when its plaintext is the secret itself; otherwise `value.template` contains
+exactly one literal `{secret}`. `value.encode`, when present, must be exported
+by `lib.credentialEncodings`; it transforms the secret before substitution.
+The template is otherwise byte-preserving, including trailing newlines.
+`value` holds only `template` and `encode`; any other field fails the check.
+
+The public example is a new-shape credential:
+
+```json
+{
+  "credential": "forgejo-https-token-allod-dev",
+  "secret_path": "secrets/forgejo-https-token-allod-dev.age",
+  "value": { "template": "https://allod-agent:{secret}@forge.anarch.diy" },
+  "targets": [
+    {
+      "system": "allod-dev",
+      "deployed_path": "/root/.git-credentials",
+      "verify": "sudo env HOME=/root GIT_TERMINAL_PROMPT=0 git ls-remote https://forge.anarch.diy/allod/tools.git HEAD"
+    }
+  ]
+}
+```
+
+Every new-shape target has a one-line `verify` command that is not empty and
+not only whitespace; consumers print it verbatim, prefixing a remote target
+with SSH. Every credential declares at least one target and every group at
+least one credential. Typical commands replace the former probe names directly:
+
+```sh
+sudo -u allod forge token verify
+git ls-remote https://forge.anarch.diy/allod/tools.git HEAD
+rclone lsd shared:
+tailscale status
+```
+
+During the migration window, a credential is either legacy (`format` plus a
+structured `verify.type` on every target) or new (optional `value` plus string
+`verify` commands). The shapes cannot mix on one credential. Existing group
+metadata, including `local_auth_refresh`, remains structured and unchanged;
+the registry check requires only the group `credentials` list for this contract.
+New-shape credentials in one group must agree on `value.encode`, because one
+prompted value serves that group. A legacy credential declares no encoding and
+is exempt, so a group migrates one credential at a time.
 
 ## Pi credential registry schema
 
@@ -150,7 +200,7 @@ lib/pi-credential-recipients.nix standalone recipient generator used by agenix
 lib/pi-credential-schema.nix shared strict schema for flake and standalone agenix paths
 machine-host-keys.json        per-VM SSH host public keys (active/staged)
 forge-ssh-keys.json           forge git SSH key registry
-forgejo-token-groups.json     Forgejo HTTPS-token deployment + local-auth-refresh map
+forgejo-token-groups.json     Forgejo HTTPS-token deployment templates, verification commands, and local-auth-refresh map
 keys/
   allod_vm.pub                forge git SSH public key (checked against the registry)
 secrets/
