@@ -32,6 +32,9 @@ This repo owns:
 - public-key registries (`machine-host-keys.json`, `forge-ssh-keys.json`,
   `keys/*.pub`)
 - the Forgejo HTTPS-token deployment map (`forgejo-token-groups.json`)
+- the credential-store URL grammar and its accept/reject vectors
+  (`credential-store-url.json`) — the table allod/archetypes, allod/nexus, and
+  allod/tools are meant to read; each cutover lands in its own repo
 - git policy data (`git/*`) — branch-protection, signing, PR-branch, and
   external-remote allowlists
 - flake `checks` that keep all of the above internally consistent
@@ -58,6 +61,11 @@ This repo does **not** own:
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
 | `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map, including each credential's rendered-value template and verification commands (from `forgejo-token-groups.json`); validated on read, so a malformed registry fails every consumer |
+| `lib.credentialStoreUrl` | attrs | the credential-store URL grammar as data (from `credential-store-url.json`): `line`, `blank_line`, and the `vectors` table each consumer's tests are meant to read |
+| `lib.isCredentialStoreUrlTemplate` | function | the grammar half alone: true when a credential declares exactly one credential-store URL line, whatever `format` it carries. A consumer with its own `format` policy composes this one rather than respelling the grammar |
+| `lib.isCredentialStoreUrlSource` | function | that grammar plus this registry's own `format` policy — a credential carrying `format` is refused — the predicate `refresh-local-auth` and the archetypes checks are to consume instead of redefining |
+| `lib.localAuthRefreshDiagnostics` | function | plain-English problems with a registry's `local_auth_refresh` entries, empty when there are none |
+| `lib.localAuthRefreshSources` | attrs | group alias -> list of `{ contract; system; local_username; source_credential; secret_path; }`, validated on read so a consumer never re-derives the URL grammar |
 | `lib.credentialEncodings` | list of strings | supported credential value encoders; currently `rclone-obscure` |
 | `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
 | `lib.vmHostKeySecretFiles` | attrs | machine name -> path of its `*-ssh.age` host-key secret, derived by scanning `secrets/vm-host-keys/` |
@@ -73,6 +81,8 @@ This repo does **not** own:
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.credential-registry` | derivation | validates the public Forgejo credential registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
+| `checks.<platform>.credential-store-url` | derivation | asserts `lib.isCredentialStoreUrlSource` agrees with every vector in `credential-store-url.json`, naming any that disagrees, and that `lib.isCredentialStoreUrlTemplate` agrees on every vector carrying no `format` |
+| `checks.<platform>.local-auth-refresh` | derivation | forces the public registry's refresh projection and runs one sabotage registry per `local_auth_refresh` validator, pinning each by its diagnostic |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 
@@ -199,6 +209,7 @@ lib/pi-credential-schema.nix shared strict schema for flake and standalone ageni
 machine-host-keys.json        per-VM SSH host public keys (active/staged)
 forge-ssh-keys.json           forge git SSH key registry
 forgejo-token-groups.json     Forgejo HTTPS-token deployment templates, verification commands, and local-auth-refresh map
+credential-store-url.json     credential-store URL grammar plus the shared accept/reject vector table
 keys/
   allod_vm.pub                forge git SSH public key (checked against the registry)
 secrets/
