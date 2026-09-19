@@ -73,7 +73,7 @@ This repo does **not** own:
 | `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `hypervisorPublicKeys`, while `nexusName` is required only for the legacy machine-key fallback |
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
-| `checks.<platform>.credential-registry` | derivation | validates the public Forgejo credential registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
+| `checks.<platform>.credential-registry` | derivation | validates the public credential rotation registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 
@@ -92,8 +92,10 @@ input edge here.
 ## Credential rotation registry schema
 
 `rotation-registry.json` declares the non-secret text around a credential and
-the command that verifies each deployed target; `service` is `forgejo` or
-`none`. A new credential omits `value` when its plaintext is the secret
+the command that verifies each deployed target. `service` names the
+credential's issuer, `forgejo` for a Forgejo UI token or `none` for anything
+else; the check does not validate it, `allod secret` refuses any other
+value. A new credential omits `value` when its plaintext is the secret
 itself; otherwise `value.template` contains exactly one literal `{secret}`.
 `value.encode`, when present, must be exported by `lib.credentialEncodings`;
 it transforms the secret before substitution. The template is otherwise
