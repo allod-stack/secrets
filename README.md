@@ -61,7 +61,6 @@ This repo does **not** own:
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
 | `lib.rotationRegistry` | attrs | credential rotation registry, including each credential's rendered-value template and verification commands (from `rotation-registry.json`); validated on read, so a malformed registry fails every consumer |
-| `lib.forgejoTokenGroups` | attrs | deprecated alias for `lib.rotationRegistry`; removed by the closing PR of allod/secrets#22 |
 | `lib.credentialStoreUrl` | attrs | the credential-store URL grammar as data (from `credential-store-url.json`): `line`, `blank_line`, and the `vectors` table each consumer's tests are meant to read |
 | `lib.isCredentialStoreUrlTemplate` | function | the grammar half alone: true when a credential declares exactly one credential-store URL line, whatever `format` it carries. A consumer with its own `format` policy composes this one rather than respelling the grammar |
 | `lib.isCredentialStoreUrlSource` | function | that grammar plus this registry's own `format` policy — a credential carrying `format` is refused — the predicate `refresh-local-auth` and the archetypes checks are to consume instead of redefining |
