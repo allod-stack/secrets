@@ -143,6 +143,162 @@
       in assert lib.assertMsg (diagnostics == [])
         "credential-registry: ${lib.concatStringsSep "; " diagnostics}";
         registry;
+    # The credential-store URL grammar and its accept/reject vectors are data,
+    # not prose: this is the one table allod/archetypes, allod/nexus, and
+    # allod/tools are meant to read instead of each carrying a spelling that
+    # only a comment keeps in step.  Each cutover lands in its own repo, so
+    # nothing here fails when a copy that has not switched yet drifts.
+    credentialStoreUrl = builtins.fromJSON (builtins.readFile ./credential-store-url.json);
+
+    # A blank line is one holding only spaces and tabs, not `[[:space:]]`:
+    # modules/netrc.nix in allod/archetypes drops lines with `awk 'NF { print }'`,
+    # and awk's default field splitting separates on space, tab and newline
+    # alone, so a line holding only a carriage return survives there.  A wider
+    # class here would accept a template whose deployed file fails activation.
+    #
+    # The grammar and the `format` policy are separate predicates so a consumer
+    # that has its own rule for `format` composes the grammar half instead of
+    # respelling it.
+    isCredentialStoreUrlTemplate = credential:
+      let
+        value =
+          if builtins.isAttrs credential && builtins.isAttrs (credential.value or null)
+          then credential.value
+          else null;
+        template = if value == null then null else value.template or null;
+        nonBlankLines =
+          if builtins.isString template then
+            builtins.filter
+              (line: builtins.match credentialStoreUrl.blank_line line == null)
+              (lib.splitString "\n" template)
+          else [];
+      in
+        builtins.isString template &&
+        (value.encode or null) == null &&
+        builtins.length (lib.splitString "{secret}" template) == 2 &&
+        builtins.length nonBlankLines == 1 &&
+        builtins.match credentialStoreUrl.line (builtins.head nonBlankLines) != null;
+
+    # This registry's own policy: a credential carrying `format` is an unknown
+    # shape, and this fails it closed rather than guess what it renders to.
+    isCredentialStoreUrlSource = credential:
+      builtins.isAttrs credential &&
+      !(credential ? format) &&
+      isCredentialStoreUrlTemplate credential;
+
+    # Named once so a sabotage fixture can require this clause by its text
+    # instead of settling for "some diagnostic".
+    credentialStoreUrlSourceClause = "is not a credential-store URL source";
+
+    localAuthRefreshContract = "nixos-netrc-from-root-git-credentials";
+    localAuthRefreshDeployedPath = "/root/.git-credentials";
+
+    # What a group declares for local_auth_refresh, or null when it declares
+    # nothing.  An explicit `null` is the same as no entries at all, following
+    # the `//` in the jq this replaces; `false` is not, because a boolean is not
+    # a list and the registry that wrote one meant something this cannot guess.
+    localAuthRefreshDeclaration = group:
+      if builtins.isAttrs group then group.local_auth_refresh or null else null;
+    localAuthRefreshEntries = group:
+      let entries = localAuthRefreshDeclaration group;
+      in if builtins.isList entries then entries else [];
+
+    # The rules allod/nexus' scripts/refresh-local-auth used to apply in jq
+    # before installing a root-owned netrc bundle.  They live here so the
+    # script consumes a projection this flake has already validated, the way
+    # every consumer of lib.forgejoTokenGroups already trusts it to have
+    # validated the registry.
+    localAuthRefreshDiagnostics = registry:
+      let
+        isNonEmptyString = value: builtins.isString value && value != "";
+        # A registry entry's own field may be missing or the wrong type, and a
+        # diagnostic that interpolates it must not abort evaluation instead of
+        # reporting the problem.
+        display = value: if builtins.isString value then value else "?";
+        groupCredentials = group:
+          if builtins.isAttrs group && builtins.isList (group.credentials or null)
+          then group.credentials
+          else [];
+        entryDiagnostic = group: entry:
+          let
+            named = builtins.filter
+              (credential:
+                builtins.isAttrs credential &&
+                (credential.credential or null) == entry.source_credential)
+              (groupCredentials group);
+            sourceCredential = builtins.head named;
+            sourceName = display (entry.source_credential or null);
+            targets =
+              if builtins.isList (sourceCredential.targets or null)
+              then sourceCredential.targets
+              else [];
+            rootTargets = builtins.filter
+              (target:
+                builtins.isAttrs target &&
+                (target.system or null) == entry.system &&
+                (target.deployed_path or null) == localAuthRefreshDeployedPath)
+              targets;
+          in
+            if !(builtins.isAttrs entry) then
+              "a local_auth_refresh entry is not an attribute set"
+            else if (entry.contract or null) != localAuthRefreshContract then
+              "a local_auth_refresh entry has unsupported contract '${display (entry.contract or null)}'"
+            else if !(isNonEmptyString (entry.system or null)) then
+              "a local_auth_refresh entry has no system"
+            else if !(isNonEmptyString (entry.local_username or null)) then
+              "a local_auth_refresh entry has no local_username"
+            else if !(isNonEmptyString (entry.source_credential or null)) then
+              "a local_auth_refresh entry has no source_credential"
+            # builtins.match is whole-string, so this is the anchored
+            # ^[A-Za-z_][A-Za-z0-9_-]*$ the jq predicate spelled out.
+            else if builtins.match "[A-Za-z_][A-Za-z0-9_-]*" entry.local_username == null then
+              "local_username '${entry.local_username}' is not a valid user name"
+            else if builtins.length named != 1 then
+              "source_credential '${sourceName}' names ${toString (builtins.length named)} credentials of this group, not exactly one"
+            else if !(isNonEmptyString (sourceCredential.secret_path or null)) then
+              "source credential '${sourceName}' has no secret_path"
+            else if !(isCredentialStoreUrlSource sourceCredential) then
+              "source credential '${sourceName}' ${credentialStoreUrlSourceClause}"
+            else if builtins.length rootTargets != 1 then
+              "source credential '${sourceName}' has no single target at ${entry.system}:${localAuthRefreshDeployedPath}"
+            else null;
+        groupDiagnostics = groupAlias: group:
+          let entries = localAuthRefreshDeclaration group;
+          in
+            if entries == null then []
+            else if !(builtins.isList entries) then
+              [ "${groupAlias}: local_auth_refresh is not an array" ]
+            else
+              map (diagnostic: "${groupAlias}: ${diagnostic}")
+                (builtins.filter (diagnostic: diagnostic != null)
+                  (map (entryDiagnostic group) entries));
+      in
+        lib.concatMap (groupAlias: groupDiagnostics groupAlias registry.${groupAlias})
+          (builtins.attrNames registry);
+
+    # Every group alias is a key, so a consumer selecting an unknown group gets
+    # a missing key rather than an empty answer that looks like "nothing to do".
+    localAuthRefreshSourcesFor = registry:
+      builtins.mapAttrs (_: group:
+        let
+          credentialFor = alias:
+            builtins.head (builtins.filter
+              (credential: (credential.credential or null) == alias)
+              (group.credentials or []));
+        in
+          map (entry: {
+            inherit (entry) contract system local_username source_credential;
+            secret_path = (credentialFor entry.source_credential).secret_path;
+          }) (localAuthRefreshEntries group)
+      ) registry;
+
+    validateLocalAuthRefresh = registry:
+      let diagnostics = localAuthRefreshDiagnostics registry;
+      in assert lib.assertMsg (diagnostics == [])
+        "local-auth-refresh: ${lib.concatStringsSep "; " diagnostics}";
+        localAuthRefreshSourcesFor registry;
+
+    forgejoTokenGroups = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =
       lib.mapAttrs'
@@ -216,7 +372,12 @@
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
     lib.rotationRegistry = rotationRegistry;
     # Deprecated alias kept for one compatibility window while archetypes, nexus, and tools move to `lib.rotationRegistry`; removed by the closing PR of allod/secrets#22.
-    lib.forgejoTokenGroups = rotationRegistry;
+    lib.forgejoTokenGroups = forgejoTokenGroups;
+    lib.credentialStoreUrl = credentialStoreUrl;
+    lib.isCredentialStoreUrlTemplate = isCredentialStoreUrlTemplate;
+    lib.isCredentialStoreUrlSource = isCredentialStoreUrlSource;
+    lib.localAuthRefreshDiagnostics = localAuthRefreshDiagnostics;
+    lib.localAuthRefreshSources = validateLocalAuthRefresh forgejoTokenGroups;
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
@@ -483,6 +644,194 @@
             "credential-registry: sabotage fixtures accepted or tripping the wrong rule: ${vacuousText}";
           pkgs.runCommand "credential-registry-check" {} ''
             echo "credential registry validation and ${toString (builtins.length sabotages)} sabotage fixtures passed"
+            touch $out
+          '';
+
+        credential-store-url =
+          let
+            vectors = credentialStoreUrl.vectors;
+            verdict = vector: isCredentialStoreUrlSource vector.credential;
+            word = accept: if accept then "accept" else "reject";
+            disagreeing = builtins.filter (vector: vector.accept != verdict vector) vectors;
+            disagreeingText = lib.concatMapStringsSep "; "
+              (vector: "${vector.name}: the table says ${word vector.accept}, the predicate says ${word (verdict vector)}")
+              disagreeing;
+            accepted = builtins.filter (vector: vector.accept) vectors;
+            rejected = builtins.filter (vector: !vector.accept) vectors;
+
+            # The composition law: on a vector whose credential carries no
+            # `format`, the two predicates must give the same answer, because
+            # the only clause between them is the `format` guard.  A vector that
+            # does carry `format` is left out: its answer is exactly what a
+            # consumer with its own format policy is free to decide, and this
+            # flake's policy is already pinned by the assertion above.
+            formatFree = builtins.filter
+              (vector: !(builtins.isAttrs vector.credential && vector.credential ? format))
+              vectors;
+            templateVerdict = vector: isCredentialStoreUrlTemplate vector.credential;
+            lawBreaking = builtins.filter
+              (vector: vector.accept != templateVerdict vector)
+              formatFree;
+            lawBreakingText = lib.concatMapStringsSep "; "
+              (vector: "${vector.name}: the table says ${word vector.accept}, the template predicate says ${word (templateVerdict vector)}")
+              lawBreaking;
+          in
+          # A table with only accept vectors, or only reject ones, would agree
+          # with a predicate that answers the same thing every time.
+          assert lib.assertMsg (accepted != [])
+            "credential-store-url: the vector table holds no accept vector";
+          assert lib.assertMsg (rejected != [])
+            "credential-store-url: the vector table holds no reject vector";
+          assert lib.assertMsg (disagreeing == [])
+            "credential-store-url: vectors the predicate disagrees with: ${disagreeingText}";
+          assert lib.assertMsg (lawBreaking == [])
+            "credential-store-url: format-free vectors the template predicate disagrees with: ${lawBreakingText}";
+          pkgs.runCommand "credential-store-url-check" {} ''
+            echo "credential-store-url predicate agreed with ${toString (builtins.length accepted)} accept and ${toString (builtins.length rejected)} reject vectors, ${toString (builtins.length formatFree)} of them also pinning the template predicate"
+            touch $out
+          '';
+
+        local-auth-refresh =
+          let
+            refreshCredential = {
+              credential = "fixture-forge-token";
+              secret_path = "secrets/fixture-forge-token.age";
+              value = { template = "https://template-user:{secret}@template.example"; };
+              targets = [{
+                system = "fixture-host";
+                deployed_path = "/root/.git-credentials";
+                verify = "git ls-remote https://template.example/fixture.git HEAD";
+              }];
+            };
+            refreshEntry = {
+              contract = "nixos-netrc-from-root-git-credentials";
+              source_credential = "fixture-forge-token";
+              system = "fixture-host";
+              local_username = "fixture-user";
+            };
+            positive = {
+              fixture = {
+                credentials = [ refreshCredential ];
+                local_auth_refresh = [ refreshEntry ];
+              };
+            };
+            withGroupField = field: value:
+              positive // { fixture = positive.fixture // { ${field} = value; }; };
+            withEntry = entry: withGroupField "local_auth_refresh" [ entry ];
+            withCredential = credential: withGroupField "credentials" [ credential ];
+
+            # Each fixture must produce exactly the one diagnostic it names, so
+            # no fixture can pass by tripping a neighbouring rule.
+            sabotages = [
+              {
+                name = "refresh-list-shape";
+                registry = withGroupField "local_auth_refresh" {};
+                diagnostic = "fixture: local_auth_refresh is not an array";
+              }
+              {
+                # A boolean is not a list, so it is refused; an explicit null is
+                # not sabotage at all and is asserted below instead.
+                name = "refresh-list-boolean";
+                registry = withGroupField "local_auth_refresh" false;
+                diagnostic = "fixture: local_auth_refresh is not an array";
+              }
+              {
+                name = "entry-shape";
+                registry = withEntry "not-an-entry";
+                diagnostic = "fixture: a local_auth_refresh entry is not an attribute set";
+              }
+              {
+                name = "unsupported-contract";
+                registry = withEntry (refreshEntry // { contract = "run-arbitrary-command"; });
+                diagnostic = "fixture: a local_auth_refresh entry has unsupported contract 'run-arbitrary-command'";
+              }
+              {
+                name = "missing-system";
+                registry = withEntry (builtins.removeAttrs refreshEntry [ "system" ]);
+                diagnostic = "fixture: a local_auth_refresh entry has no system";
+              }
+              {
+                name = "missing-local-username";
+                registry = withEntry (builtins.removeAttrs refreshEntry [ "local_username" ]);
+                diagnostic = "fixture: a local_auth_refresh entry has no local_username";
+              }
+              {
+                name = "missing-source-credential";
+                registry = withEntry (builtins.removeAttrs refreshEntry [ "source_credential" ]);
+                diagnostic = "fixture: a local_auth_refresh entry has no source_credential";
+              }
+              {
+                name = "local-username-shape";
+                registry = withEntry (refreshEntry // { local_username = "1-not-a-user"; });
+                diagnostic = "fixture: local_username '1-not-a-user' is not a valid user name";
+              }
+              {
+                name = "unknown-source-credential";
+                registry = withEntry (refreshEntry // { source_credential = "missing-credential"; });
+                diagnostic = "fixture: source_credential 'missing-credential' names 0 credentials of this group, not exactly one";
+              }
+              {
+                name = "missing-secret-path";
+                registry = withCredential (builtins.removeAttrs refreshCredential [ "secret_path" ]);
+                diagnostic = "fixture: source credential 'fixture-forge-token' has no secret_path";
+              }
+              {
+                # The clause is pinned by its text, not by "some diagnostic":
+                # every other sabotage here would reject this fixture too.
+                name = "template-is-not-a-credential-store-url";
+                registry = withCredential (refreshCredential // {
+                  value = { template = "http://template-user:{secret}@template.example"; };
+                });
+                diagnostic = "fixture: source credential 'fixture-forge-token' ${credentialStoreUrlSourceClause}";
+              }
+              {
+                name = "wrong-deployed-path";
+                registry = withCredential (refreshCredential // {
+                  targets = map (target: target // { deployed_path = "/tmp/wrong-git-credentials"; })
+                    refreshCredential.targets;
+                });
+                diagnostic = "fixture: source credential 'fixture-forge-token' has no single target at fixture-host:/root/.git-credentials";
+              }
+            ];
+
+            diagnosticsText = registry:
+              "[${lib.concatStringsSep "; " (localAuthRefreshDiagnostics registry)}]";
+            tripsOnlyItsOwnRule = sabotage:
+              localAuthRefreshDiagnostics sabotage.registry == [ sabotage.diagnostic ] &&
+              !(builtins.tryEval
+                (builtins.deepSeq (validateLocalAuthRefresh sabotage.registry) true)).success;
+            vacuousSabotages = builtins.filter (sabotage: !(tripsOnlyItsOwnRule sabotage)) sabotages;
+            vacuousText = lib.concatMapStringsSep "; "
+              (sabotage: "${sabotage.name} wanted [${sabotage.diagnostic}] got ${diagnosticsText sabotage.registry}")
+              vacuousSabotages;
+
+            # A group that declares `local_auth_refresh: null` refreshes nothing
+            # and is not an error: the jq this replaces read it through `//`, and
+            # the registry validator accepts it, so refusing it here would make
+            # the export throw on a registry that works today.
+            nullRefreshRegistry = withGroupField "local_auth_refresh" null;
+
+            projection = validateLocalAuthRefresh forgejoTokenGroups;
+            missingGroups = builtins.filter
+              (groupAlias: !(builtins.hasAttr groupAlias projection))
+              (builtins.attrNames forgejoTokenGroups);
+          in
+          assert lib.assertMsg (localAuthRefreshDiagnostics forgejoTokenGroups == [])
+            "local-auth-refresh: public registry failed validation: ${diagnosticsText forgejoTokenGroups}";
+          assert lib.assertMsg (localAuthRefreshDiagnostics positive == [])
+            "local-auth-refresh: positive fixture failed validation: ${diagnosticsText positive}";
+          assert lib.assertMsg (localAuthRefreshDiagnostics nullRefreshRegistry == [])
+            "local-auth-refresh: an explicit null local_auth_refresh was refused: ${diagnosticsText nullRefreshRegistry}";
+          assert lib.assertMsg ((validateLocalAuthRefresh nullRefreshRegistry).fixture == [])
+            "local-auth-refresh: an explicit null local_auth_refresh did not project to an empty list";
+          assert lib.assertMsg (missingGroups == [])
+            "local-auth-refresh: projection does not key every group alias: ${lib.concatStringsSep ", " missingGroups}";
+          assert lib.assertMsg ((builtins.tryEval (builtins.deepSeq projection true)).success)
+            "local-auth-refresh: the projection of the public registry does not evaluate";
+          assert lib.assertMsg (vacuousSabotages == [])
+            "local-auth-refresh: sabotage fixtures accepted or tripping the wrong rule: ${vacuousText}";
+          pkgs.runCommand "local-auth-refresh-check" {} ''
+            echo "local-auth-refresh projection and ${toString (builtins.length sabotages)} sabotage fixtures passed"
             touch $out
           '';
 
