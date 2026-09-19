@@ -203,6 +203,8 @@
     vmUsernames =
       builtins.mapAttrs (_: id: id.username) (devIdentities // privacyIdentities) //
       { ${nexusIdentity.hostname} = nexusIdentity.username; };
+
+    rotationRegistry = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
   in {
     lib.devIdentities = devIdentities;
     lib.privacyIdentities = privacyIdentities;
@@ -212,7 +214,9 @@
     lib.credentialEncodings = credentialEncodings;
     lib.identity = identity;
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
-    lib.forgejoTokenGroups = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json));
+    lib.rotationRegistry = rotationRegistry;
+    # Deprecated alias kept for one compatibility window while archetypes, nexus, and tools move to `lib.rotationRegistry`; removed by the closing PR of allod/secrets#22.
+    lib.forgejoTokenGroups = rotationRegistry;
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
@@ -267,7 +271,7 @@
 
         credential-registry =
           let
-            current = builtins.fromJSON (builtins.readFile ./forgejo-token-groups.json);
+            current = builtins.fromJSON (builtins.readFile ./rotation-registry.json);
 
             newPlainCredential = {
               credential = "new-plain-token";

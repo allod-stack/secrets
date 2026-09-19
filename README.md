@@ -31,7 +31,7 @@ This repo owns:
   and per-VM SSH host keys
 - public-key registries (`machine-host-keys.json`, `forge-ssh-keys.json`,
   `keys/*.pub`)
-- the Forgejo HTTPS-token deployment map (`forgejo-token-groups.json`)
+- the credential rotation registry (`rotation-registry.json`)
 - git policy data (`git/*`) — branch-protection, signing, PR-branch, and
   external-remote allowlists
 - flake `checks` that keep all of the above internally consistent
@@ -57,7 +57,8 @@ This repo does **not** own:
 | `lib.vmUsernames` | attrs | machine name -> login username |
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
-| `lib.forgejoTokenGroups` | attrs | Forgejo HTTPS-token deployment map, including each credential's rendered-value template and verification commands (from `forgejo-token-groups.json`); validated on read, so a malformed registry fails every consumer |
+| `lib.rotationRegistry` | attrs | credential rotation registry, including each credential's rendered-value template and verification commands (from `rotation-registry.json`); validated on read, so a malformed registry fails every consumer |
+| `lib.forgejoTokenGroups` | attrs | deprecated alias for `lib.rotationRegistry`; removed by the closing PR of allod/secrets#22 |
 | `lib.credentialEncodings` | list of strings | supported credential value encoders; currently `rclone-obscure` |
 | `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
 | `lib.vmHostKeySecretFiles` | attrs | machine name -> path of its `*-ssh.age` host-key secret, derived by scanning `secrets/vm-host-keys/` |
@@ -88,15 +89,16 @@ to `profiles.lib.piProviders` and must force
 unknown providers fail at the consumption seam without creating another flake
 input edge here.
 
-## Forgejo credential registry schema
+## Credential rotation registry schema
 
-`forgejo-token-groups.json` declares the non-secret text around a credential and
-the command that verifies each deployed target. A new credential omits `value`
-when its plaintext is the secret itself; otherwise `value.template` contains
-exactly one literal `{secret}`. `value.encode`, when present, must be exported
-by `lib.credentialEncodings`; it transforms the secret before substitution.
-The template is otherwise byte-preserving, including trailing newlines.
-`value` holds only `template` and `encode`; any other field fails the check.
+`rotation-registry.json` declares the non-secret text around a credential and
+the command that verifies each deployed target; `service` is `forgejo` or
+`none`. A new credential omits `value` when its plaintext is the secret
+itself; otherwise `value.template` contains exactly one literal `{secret}`.
+`value.encode`, when present, must be exported by `lib.credentialEncodings`;
+it transforms the secret before substitution. The template is otherwise
+byte-preserving, including trailing newlines. `value` holds only `template`
+and `encode`; any other field fails the check.
 
 The public example is a new-shape credential:
 
@@ -198,7 +200,7 @@ lib/pi-credential-recipients.nix standalone recipient generator used by agenix
 lib/pi-credential-schema.nix shared strict schema for flake and standalone agenix paths
 machine-host-keys.json        per-VM SSH host public keys (active/staged)
 forge-ssh-keys.json           forge git SSH key registry
-forgejo-token-groups.json     Forgejo HTTPS-token deployment templates, verification commands, and local-auth-refresh map
+rotation-registry.json        credential rotation registry: rendered-value templates, verification commands, and local-auth-refresh map
 keys/
   allod_vm.pub                forge git SSH public key (checked against the registry)
 secrets/
@@ -265,7 +267,7 @@ output:
   value to the recipients `secrets.nix` declares, writes the file, and flips
   the state to `active`, where the check requires the file present. A
   `pending` entry with a file, or an `active` one without, fails the check.
-- `credentials` / `forgeSshKeys` / `forgejoTokenGroups` / `githubCredentialTargets`
+- `credentials` / `forgeSshKeys` / `rotationRegistry` / `githubCredentialTargets`
   drive token and forge-key deployment; `age.secrets` files are read straight from
   `${secrets}/<secret path>`.
 - `piCredentials`, `piProviderCredentials`, and `piCredentialProjections` expose
