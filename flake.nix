@@ -206,7 +206,7 @@
     # The rules allod/nexus' scripts/refresh-local-auth used to apply in jq
     # before installing a root-owned netrc bundle.  They live here so the
     # script consumes a projection this flake has already validated, the way
-    # every consumer of lib.forgejoTokenGroups already trusts it to have
+    # every consumer of lib.rotationRegistry already trusts it to have
     # validated the registry.
     localAuthRefreshDiagnostics = registry:
       let
@@ -298,7 +298,7 @@
         "local-auth-refresh: ${lib.concatStringsSep "; " diagnostics}";
         localAuthRefreshSourcesFor registry;
 
-    forgejoTokenGroups = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
+    rotationRegistry = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =
       lib.mapAttrs'
@@ -359,8 +359,6 @@
     vmUsernames =
       builtins.mapAttrs (_: id: id.username) (devIdentities // privacyIdentities) //
       { ${nexusIdentity.hostname} = nexusIdentity.username; };
-
-    rotationRegistry = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
   in {
     lib.devIdentities = devIdentities;
     lib.privacyIdentities = privacyIdentities;
@@ -372,12 +370,12 @@
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
     lib.rotationRegistry = rotationRegistry;
     # Deprecated alias kept for one compatibility window while archetypes, nexus, and tools move to `lib.rotationRegistry`; removed by the closing PR of allod/secrets#22.
-    lib.forgejoTokenGroups = forgejoTokenGroups;
+    lib.forgejoTokenGroups = rotationRegistry;
     lib.credentialStoreUrl = credentialStoreUrl;
     lib.isCredentialStoreUrlTemplate = isCredentialStoreUrlTemplate;
     lib.isCredentialStoreUrlSource = isCredentialStoreUrlSource;
     lib.localAuthRefreshDiagnostics = localAuthRefreshDiagnostics;
-    lib.localAuthRefreshSources = validateLocalAuthRefresh forgejoTokenGroups;
+    lib.localAuthRefreshSources = validateLocalAuthRefresh rotationRegistry;
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
@@ -811,13 +809,13 @@
             # the export throw on a registry that works today.
             nullRefreshRegistry = withGroupField "local_auth_refresh" null;
 
-            projection = validateLocalAuthRefresh forgejoTokenGroups;
+            projection = validateLocalAuthRefresh rotationRegistry;
             missingGroups = builtins.filter
               (groupAlias: !(builtins.hasAttr groupAlias projection))
-              (builtins.attrNames forgejoTokenGroups);
+              (builtins.attrNames rotationRegistry);
           in
-          assert lib.assertMsg (localAuthRefreshDiagnostics forgejoTokenGroups == [])
-            "local-auth-refresh: public registry failed validation: ${diagnosticsText forgejoTokenGroups}";
+          assert lib.assertMsg (localAuthRefreshDiagnostics rotationRegistry == [])
+            "local-auth-refresh: public registry failed validation: ${diagnosticsText rotationRegistry}";
           assert lib.assertMsg (localAuthRefreshDiagnostics positive == [])
             "local-auth-refresh: positive fixture failed validation: ${diagnosticsText positive}";
           assert lib.assertMsg (localAuthRefreshDiagnostics nullRefreshRegistry == [])
