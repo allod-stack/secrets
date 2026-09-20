@@ -54,7 +54,7 @@ This repo does **not** own:
 | Output | Type | Description |
 |---|---|---|
 | `lib.identity` | attrs | raw `identity.nix` — username, email, forge host/port/user, host public key(s), VM rosters, SSH host aliases, external SSH trust targets |
-| `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, forge/agent token file paths, GPG signing key |
+| `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, forge/agent token file paths, GPG signing key, `sshHosts` (the VM's own external SSH aliases, defaulted) |
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
 | `lib.nexusIdentity` | attrs | host identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null, or a Nix path to an `.age` file) |
 | `lib.vmUsernames` | attrs | machine name -> login username |
@@ -78,6 +78,7 @@ This repo does **not** own:
 | `lib.piCredentialProjections` | attrs | dev VM -> `{ credentials; providers; }` projection |
 | `lib.validatePiProviderReferences` | function | rejects provider IDs absent from a caller-supplied known-ID list and returns the provider-to-credential projection |
 | `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `hypervisorPublicKeys`, while `nexusName` is required only for the legacy machine-key fallback |
+| `lib.projectDevSshHosts` | function | projects one dev VM's `devVMs.<vm>.sshHosts` onto its defaulted alias set, refusing a reserved name, a non-literal alias, or a malformed entry; the framework and downstream forks call it rather than respelling the rules |
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.credential-registry` | derivation | validates the public credential rotation registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
@@ -85,6 +86,7 @@ This repo does **not** own:
 | `checks.<platform>.local-auth-refresh` | derivation | forces the public registry's refresh projection and runs one sabotage registry per `local_auth_refresh` validator, pinning each by its diagnostic |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
+| `checks.<platform>.dev-ssh-hosts` | derivation | validates the per-dev-VM external SSH alias projection: a machine without `sshHosts` projects empty, an entry gains its VM's own key and `identitiesOnly` while keeping its own fields, and one sabotage witness per refusal (reserved name, non-literal alias, malformed entry) |
 
 `checks` are generated for every platform in `inventory.lib.supportedPlatforms`.
 The only flake inputs are `nixpkgs` (nixos-25.11) and `inventory`.

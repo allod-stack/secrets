@@ -13,7 +13,18 @@ rec {
   gpgSigningKey = null;
 
   devVMs = {
-    allod-dev = { sshKeyName = "allod_vm"; };
+    allod-dev = {
+      sshKeyName = "allod_vm";
+      # External hosts this VM reaches with its own key, rendered beside its
+      # forge entry. Never a machine of the deployment or the forge host.
+      sshHosts = {
+        example-build-cache = {
+          hostname = "192.0.2.40";
+          user = "cache";
+          extraOptions.HostKeyAlias = "example-build-cache";
+        };
+      };
+    };
   };
 
   privacyVMs = {
