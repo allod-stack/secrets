@@ -474,9 +474,11 @@
 
             # Each sabotage is a thunk, forced one at a time, so the whole set
             # is never live at once.
-            rejects = alias: entry:
+            rejectsSet = sshHosts:
               !(builtins.tryEval
-                (builtins.deepSeq (projectFixture { sshHosts = { ${alias} = entry; }; }) true)).success;
+                (builtins.deepSeq (projectFixture { inherit sshHosts; }) true)).success;
+
+            rejects = alias: entry: rejectsSet { ${alias} = entry; };
 
             goodEntry = { hostname = "198.51.100.42"; };
           in
@@ -506,6 +508,20 @@
             "dev-ssh-hosts: an entry without a string hostname must be refused";
           assert lib.assertMsg (rejects "fixture-string" "198.51.100.43")
             "dev-ssh-hosts: an entry that is not an attribute set must be refused";
+          assert lib.assertMsg (rejects "fixture-header" {
+              hostname = "198.51.100.44";
+              extraOptions.header = "Host forge.fixture.invalid";
+            })
+            "dev-ssh-hosts: an extraOptions header must be refused";
+          assert lib.assertMsg (rejects "fixture-newline" {
+              hostname = "198.51.100.45\nHost forge.fixture.invalid";
+            })
+            "dev-ssh-hosts: a newline inside a string field must be refused";
+          assert lib.assertMsg (rejectsSet {
+              "A-cache" = { hostname = "198.51.100.46"; };
+              "a-cache" = { hostname = "198.51.100.47"; };
+            })
+            "dev-ssh-hosts: two aliases differing only by case must be refused";
           # The composed half: the template's own projection, not a fixture.
           assert lib.assertMsg
             (devIdentities.allod-dev.sshHosts.example-build-cache.identityFile
