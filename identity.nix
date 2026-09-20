@@ -47,12 +47,17 @@ rec {
       hostname = "192.0.2.31";
       user = "storage";
       identityFile = "~/.ssh/host";
+      localForwards = [
+        { bind = { address = "127.0.0.1"; port = 8443; }; host = { address = "192.0.2.31"; port = 443; }; }
+        { bind.port = 5900; host = { address = "192.0.2.31"; port = 5900; }; }
+      ];
     };
     example-provider-support = {
       hostname = "192.0.2.32";
       user = "support";
       port = 2222;
       identityFile = "~/.ssh/host";
+      extraOptions = { ServerAliveInterval = "30"; };
     };
   };
 
