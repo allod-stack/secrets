@@ -293,7 +293,11 @@
           }) (localAuthRefreshEntries group)
       ) registry;
 
-    validateLocalAuthRefresh = registry:
+    # Exported as a function of a registry beside its applied result, the way
+    # mkPiCredentialContract sits beside lib.piCredentials: a downstream fork
+    # validates its own registry, so it calls this on that registry instead of
+    # copying the field mapping and gating it with the diagnostics itself.
+    mkLocalAuthRefreshSources = registry:
       let diagnostics = localAuthRefreshDiagnostics registry;
       in assert lib.assertMsg (diagnostics == [])
         "local-auth-refresh: ${lib.concatStringsSep "; " diagnostics}";
@@ -375,7 +379,8 @@
     lib.isCredentialStoreUrlTemplate = isCredentialStoreUrlTemplate;
     lib.isCredentialStoreUrlSource = isCredentialStoreUrlSource;
     lib.localAuthRefreshDiagnostics = localAuthRefreshDiagnostics;
-    lib.localAuthRefreshSources = validateLocalAuthRefresh rotationRegistry;
+    lib.mkLocalAuthRefreshSources = mkLocalAuthRefreshSources;
+    lib.localAuthRefreshSources = mkLocalAuthRefreshSources rotationRegistry;
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
@@ -904,7 +909,7 @@
             tripsOnlyItsOwnRule = sabotage:
               localAuthRefreshDiagnostics sabotage.registry == [ sabotage.diagnostic ] &&
               !(builtins.tryEval
-                (builtins.deepSeq (validateLocalAuthRefresh sabotage.registry) true)).success;
+                (builtins.deepSeq (mkLocalAuthRefreshSources sabotage.registry) true)).success;
             vacuousSabotages = builtins.filter (sabotage: !(tripsOnlyItsOwnRule sabotage)) sabotages;
             vacuousText = lib.concatMapStringsSep "; "
               (sabotage: "${sabotage.name} wanted [${sabotage.diagnostic}] got ${diagnosticsText sabotage.registry}")
@@ -916,7 +921,7 @@
             # the export throw on a registry that works today.
             nullRefreshRegistry = withGroupField "local_auth_refresh" null;
 
-            projection = validateLocalAuthRefresh rotationRegistry;
+            projection = mkLocalAuthRefreshSources rotationRegistry;
             missingGroups = builtins.filter
               (groupAlias: !(builtins.hasAttr groupAlias projection))
               (builtins.attrNames rotationRegistry);
@@ -927,7 +932,7 @@
             "local-auth-refresh: positive fixture failed validation: ${diagnosticsText positive}";
           assert lib.assertMsg (localAuthRefreshDiagnostics nullRefreshRegistry == [])
             "local-auth-refresh: an explicit null local_auth_refresh was refused: ${diagnosticsText nullRefreshRegistry}";
-          assert lib.assertMsg ((validateLocalAuthRefresh nullRefreshRegistry).fixture == [])
+          assert lib.assertMsg ((mkLocalAuthRefreshSources nullRefreshRegistry).fixture == [])
             "local-auth-refresh: an explicit null local_auth_refresh did not project to an empty list";
           assert lib.assertMsg (missingGroups == [])
             "local-auth-refresh: projection does not key every group alias: ${lib.concatStringsSep ", " missingGroups}";

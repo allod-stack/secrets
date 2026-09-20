@@ -65,6 +65,7 @@ This repo does **not** own:
 | `lib.isCredentialStoreUrlTemplate` | function | the grammar half alone: true when a credential declares exactly one credential-store URL line, whatever `format` it carries. A consumer with its own `format` policy composes this one rather than respelling the grammar |
 | `lib.isCredentialStoreUrlSource` | function | that grammar plus this registry's own `format` policy — a credential carrying `format` is refused — the predicate `refresh-local-auth` and the archetypes checks are to consume instead of redefining |
 | `lib.localAuthRefreshDiagnostics` | function | plain-English problems with a registry's `local_auth_refresh` entries, empty when there are none |
+| `lib.mkLocalAuthRefreshSources` | function | the same validated projection as a function of a caller-supplied registry: asserts `lib.localAuthRefreshDiagnostics` is empty, then projects; `lib.localAuthRefreshSources` is this applied to `rotation-registry.json`, and a fork applies it to its own registry instead of re-spelling the mapping |
 | `lib.localAuthRefreshSources` | attrs | group alias -> list of `{ contract; system; local_username; source_credential; secret_path; }`, validated on read so a consumer never re-derives the URL grammar |
 | `lib.credentialEncodings` | list of strings | supported credential value encoders; currently `rclone-obscure` |
 | `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
