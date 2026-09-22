@@ -92,6 +92,12 @@ This repo does **not** own:
 `checks` are generated for every platform in `inventory.lib.supportedPlatforms`.
 The only flake inputs are `nixpkgs` (nixos-25.11) and `inventory`.
 
+## Checks
+
+The check suite lives under `checks/`, one file per check, and `checks/default.nix` is the index that hands each check its arguments. `flake.nix` passes that index the composition — `pkgs`, the identity and credential data, and the validators `lib/` exposes over them — and a check's own argument list is the whole of what it reads. Adding a check is a new file and one entry in the index. Its derivation name is what a fork excludes or re-exports by, so it stays unique and does not change when a check moves.
+
+The registry validators a fork's own data must satisfy — `credentialRegistryDiagnostics` / `validateCredentialRegistry`, the credential-store-URL predicates, and the local-auth-refresh contract and diagnostics — live in `lib/` beside `lib/dev-ssh-hosts.nix` and the Pi credential contract files, not in `flake.nix`; each takes the data it validates as an argument rather than closing over it.
+
 The secrets contract deliberately does not import profiles. It validates Pi
 credential IDs, targets, token names, deployment defaults, recipient keys,
 ciphertext presence, and the rule that one provider belongs to only one
@@ -204,11 +210,17 @@ stores ciphertext only. Public keys and recipient metadata are public by nature.
 ## Layout
 
 ```
-flake.nix                     inputs (nixpkgs, inventory); lib / checks outputs
+flake.nix                     inputs (nixpkgs, inventory); composes data + lib/checks outputs
 identity.nix                  synthetic identity, VM rosters, SSH host aliases, trust targets
 credentials.nix               credential inventory derived from the key registries + token entries
 pi-credentials.json           Pi credential -> providers/targets/tokens/defaultToken; empty in the public template
 secrets.nix                   agenix recipient map (.age path -> recipient public keys)
+checks/default.nix            the check suite index; hands each check file its inputs
+checks/*.nix                  one file per check (see "Checks" below)
+lib/credential-registry.nix   registry-shape validation (`credentialRegistryDiagnostics`, `validateCredentialRegistry`)
+lib/credential-store-url.nix  the credential-store URL grammar/policy predicates
+lib/local-auth-refresh.nix    the local-auth-refresh contract, diagnostics, and projection
+lib/dev-ssh-hosts.nix         projects a dev VM's own external SSH aliases
 lib/pi-credential-contract.nix validates and derives Pi credential projections
 lib/pi-credential-recipients.nix standalone recipient generator used by agenix
 lib/pi-credential-schema.nix shared strict schema for flake and standalone agenix paths
