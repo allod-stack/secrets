@@ -113,17 +113,14 @@
       # (a path, not a string; the same spelling the dev-VM token fields above use).
       userForgejoTokenFile = null;
       siteHostingConfigFile = null;
-      # Keys allowed to SSH into this hypervisor. The primary stays empty
-      # forever; only an additional hypervisor grants operator access here.
+      # Leave empty: only an additional hypervisor's entry may set this.
       operatorPublicKeys = [ ];
     };
 
-    # Keyed by hostname. The primary is the only entry until a deployment
-    # declares a second hypervisor.
     hypervisorIdentities = { ${nexusIdentity.hostname} = nexusIdentity; };
 
-    # A hypervisor hostname colliding with a guest machine name is fatal:
-    # the merged map could no longer say which principal owns that login.
+    # Do not drop this assert: a silently overwritten collision hands a
+    # login to the wrong principal.
     mkVmUsernames = { guestUsernames, hypervisorIdentities }:
       let
         hypervisorUsernames = builtins.mapAttrs (_: id: id.username) hypervisorIdentities;
