@@ -24,6 +24,9 @@
 , rotationRegistry
 , mkPiCredentialContract
 , piCredentialContract
+, hypervisorIdentities
+, nexusIdentity
+, mkVmUsernames
 }:
 {
   external-ssh-trust-targets = import ./external-ssh-trust-targets.nix {
@@ -53,5 +56,9 @@
 
   credential-inventory = import ./credential-inventory.nix {
     inherit lib pkgs self credentials secretsNix machineHostKeys;
+  };
+
+  hypervisor-identities = import ./hypervisor-identities.nix {
+    inherit lib pkgs hypervisorIdentities nexusIdentity mkVmUsernames;
   };
 }

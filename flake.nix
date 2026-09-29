@@ -113,15 +113,37 @@
       # (a path, not a string; the same spelling the dev-VM token fields above use).
       userForgejoTokenFile = null;
       siteHostingConfigFile = null;
+      # Keys allowed to SSH into this hypervisor. The primary stays empty
+      # forever; only an additional hypervisor grants operator access here.
+      operatorPublicKeys = [ ];
     };
 
-    vmUsernames =
-      builtins.mapAttrs (_: id: id.username) (devIdentities // privacyIdentities) //
-      { ${nexusIdentity.hostname} = nexusIdentity.username; };
+    # Keyed by hostname. The primary is the only entry until a deployment
+    # declares a second hypervisor.
+    hypervisorIdentities = { ${nexusIdentity.hostname} = nexusIdentity; };
+
+    # A hypervisor hostname colliding with a guest machine name is fatal:
+    # the merged map could no longer say which principal owns that login.
+    mkVmUsernames = { guestUsernames, hypervisorIdentities }:
+      let
+        hypervisorUsernames = builtins.mapAttrs (_: id: id.username) hypervisorIdentities;
+        collisions = lib.intersectLists
+          (builtins.attrNames guestUsernames)
+          (builtins.attrNames hypervisorUsernames);
+      in
+      assert lib.assertMsg (collisions == [])
+        "vmUsernames: hypervisor identity collides with a guest machine name: ${lib.concatStringsSep ", " collisions}";
+      guestUsernames // hypervisorUsernames;
+
+    vmUsernames = mkVmUsernames {
+      guestUsernames = builtins.mapAttrs (_: id: id.username) (devIdentities // privacyIdentities);
+      inherit hypervisorIdentities;
+    };
   in {
     lib.devIdentities = devIdentities;
     lib.privacyIdentities = privacyIdentities;
     lib.nexusIdentity = nexusIdentity;
+    lib.hypervisorIdentities = hypervisorIdentities;
     lib.vmUsernames = vmUsernames;
     lib.credentials = credentials;
     lib.credentialEncodings = credentialEncodings;
@@ -159,7 +181,8 @@
           isCredentialStoreUrlTemplate isCredentialStoreUrlSource
           credentialStoreUrlSourceClause localAuthRefreshDiagnostics
           mkLocalAuthRefreshSources rotationRegistry mkPiCredentialContract
-          piCredentialContract;
+          piCredentialContract hypervisorIdentities nexusIdentity
+          mkVmUsernames;
       });
   };
 }
