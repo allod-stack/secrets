@@ -1,12 +1,10 @@
 { lib, pkgs, identity, secretsNix, machineHostKeys, machines }:
   let
-    # The rule as a function of exactly what it needs, so the fixtures below
-    # drive the same logic the real data is checked against: if a secret's
-    # recipients include any key of guest g, they must also include a key of
-    # the hypervisor that runs g (machines.<g>.host, or the primary when
-    # absent). A guest's own host-key secret is checked the same way even
-    # though it never lists the guest's own key as a recipient.
-    hypervisorRecipientDiagnostics = { machines, secretsRules, primaryKeys, machineHostKeys }:
+    # Contract: a secret naming a guest's key must also name a key of the
+    # hypervisor that runs that guest; the guest's vm-host-keys secret obeys
+    # the same rule.
+    # Trap: the primary is never registered in machine-host-keys.json.
+    hypervisorRecipientDiagnostics = { machines, secretsRules, primaryKeys, primaryName, machineHostKeys }:
       let
         vmKeys = name:
           if machineHostKeys ? ${name}
@@ -20,7 +18,10 @@
 
         hypervisorKeysFor = g:
           let host = machines.${g}.host or null;
-          in if host == null then primaryKeys else vmKeys host;
+          in
+            if host == null || host == primaryName then primaryKeys
+            else if machineHostKeys ? ${host} then vmKeys host
+            else throw "hypervisor-recipient-coverage: guest ${g}'s host ${host} has no registered keys in machine-host-keys.json";
 
         secretsList = lib.mapAttrsToList
           (path: s: { inherit path; publicKeys = s.publicKeys; })
@@ -33,12 +34,14 @@
             guestKeys = vmKeys g;
             hvKeys = hypervisorKeysFor g;
           in
-          lib.concatMap (s:
-            if guestKeys != [] && hasAny guestKeys s.publicKeys
-               && !(hasAny hvKeys s.publicKeys)
-            then [ { secret = s.path; guest = g; } ]
-            else []
-          ) secretsList
+          builtins.seq hvKeys (
+            lib.concatMap (s:
+              if guestKeys != [] && hasAny guestKeys s.publicKeys
+                 && !(hasAny hvKeys s.publicKeys)
+              then [ { secret = s.path; guest = g; } ]
+              else []
+            ) secretsList
+          )
         ) guestNames;
 
         hostKeyGaps = lib.concatMap (g:
@@ -46,9 +49,11 @@
             path = "secrets/vm-host-keys/${g}-ssh.age";
             hvKeys = hypervisorKeysFor g;
           in
-          if secretsRules ? ${path} && !(hasAny hvKeys secretsRules.${path}.publicKeys)
-          then [ { secret = path; guest = g; } ]
-          else []
+          builtins.seq hvKeys (
+            if secretsRules ? ${path} && !(hasAny hvKeys secretsRules.${path}.publicKeys)
+            then [ { secret = path; guest = g; } ]
+            else []
+          )
         ) guestNames;
       in { inherit recipientGaps hostKeyGaps; };
 
@@ -56,58 +61,103 @@
       inherit machines machineHostKeys;
       secretsRules = secretsNix;
       primaryKeys = identity.hostPublicKeys;
+      primaryName = identity.hostname;
     };
 
-    # A second, fixture-only hypervisor: one guest it hosts, and one guest
-    # left on the primary by omitting `host`, so both branches of "which
-    # hypervisor runs g" run.
-    fixtureMachines = {
-      fixture-guest-hosted = { type = "dev"; host = "fixture-hv-2"; };
-      fixture-guest-primary = { type = "dev"; };
-      fixture-hv-2 = { type = "hypervisor"; };
-    };
-    fixtureMachineHostKeys = {
-      fixture-guest-hosted = { active = "fixture-guest-hosted-key"; staged = null; };
-      fixture-guest-primary = { active = "fixture-guest-primary-key"; staged = null; };
-      fixture-hv-2 = { active = "fixture-hv-2-key"; staged = null; };
-    };
-    fixturePrimaryKeys = [ "fixture-primary-key" ];
+    fixturePrimaryName = "fixture-primary-hv";
+    fixtureSecondaryName = "fixture-secondary-hv";
 
-    fixtureHealthySecrets = {
-      "secrets/fixture-guest-hosted-token.age".publicKeys =
-        [ "fixture-primary-key" "fixture-hv-2-key" "fixture-guest-hosted-key" ];
-      "secrets/fixture-guest-primary-token.age".publicKeys =
-        [ "fixture-primary-key" "fixture-guest-primary-key" ];
-      "secrets/vm-host-keys/fixture-guest-hosted-ssh.age".publicKeys =
-        [ "fixture-primary-key" "fixture-hv-2-key" ];
-      "secrets/vm-host-keys/fixture-guest-primary-ssh.age".publicKeys =
-        [ "fixture-primary-key" ];
+    fixtureSingleMachines = {
+      fixture-solo-guest = { type = "dev"; };
     };
-
-    # A recipient set naming the hosted guest but not its host hypervisor:
-    # the property this check exists to catch.
-    fixtureSabotagedSecrets = fixtureHealthySecrets // {
-      "secrets/fixture-guest-hosted-token.age".publicKeys =
-        [ "fixture-primary-key" "fixture-guest-hosted-key" ];
+    fixtureSingleMachineHostKeys = {
+      fixture-solo-guest = { active = "fixture-solo-guest-key"; staged = null; };
     };
-
-    fixtureArgs = secretsRules: {
-      machines = fixtureMachines;
-      machineHostKeys = fixtureMachineHostKeys;
-      primaryKeys = fixturePrimaryKeys;
+    fixtureSingleArgs = secretsRules: {
+      machines = fixtureSingleMachines;
+      machineHostKeys = fixtureSingleMachineHostKeys;
+      primaryKeys = [ "fixture-solo-primary-key" ];
+      primaryName = "fixture-solo-primary-hv";
       inherit secretsRules;
     };
+    fixtureSingleHealthy = hypervisorRecipientDiagnostics (fixtureSingleArgs {
+      "secrets/fixture-solo-guest-token.age".publicKeys =
+        [ "fixture-solo-primary-key" "fixture-solo-guest-key" ];
+      "secrets/vm-host-keys/fixture-solo-guest-ssh.age".publicKeys =
+        [ "fixture-solo-primary-key" ];
+    });
 
-    fixtureHealthy = hypervisorRecipientDiagnostics (fixtureArgs fixtureHealthySecrets);
-    fixtureSabotaged = hypervisorRecipientDiagnostics (fixtureArgs fixtureSabotagedSecrets);
+    fixtureTwoMachines = {
+      ${fixturePrimaryName} = { type = "hypervisor"; };
+      ${fixtureSecondaryName} = { type = "hypervisor"; };
+      fixture-guest-on-primary = { type = "dev"; host = fixturePrimaryName; };
+      fixture-guest-on-secondary = { type = "dev"; host = fixtureSecondaryName; };
+    };
+    fixtureTwoMachineHostKeys = {
+      fixture-guest-on-primary = { active = "fixture-guest-on-primary-key"; staged = null; };
+      fixture-guest-on-secondary = { active = "fixture-guest-on-secondary-key"; staged = null; };
+      ${fixtureSecondaryName} = { active = "fixture-secondary-hv-key"; staged = null; };
+    };
+    fixtureTwoPrimaryKeys = [ "fixture-two-primary-key" ];
+    fixtureTwoArgs = secretsRules: {
+      machines = fixtureTwoMachines;
+      machineHostKeys = fixtureTwoMachineHostKeys;
+      primaryKeys = fixtureTwoPrimaryKeys;
+      primaryName = fixturePrimaryName;
+      inherit secretsRules;
+    };
+    fixtureTwoHealthySecrets = {
+      "secrets/fixture-guest-on-primary-token.age".publicKeys =
+        [ "fixture-two-primary-key" "fixture-guest-on-primary-key" ];
+      "secrets/fixture-guest-on-secondary-token.age".publicKeys =
+        [ "fixture-secondary-hv-key" "fixture-guest-on-secondary-key" ];
+      "secrets/vm-host-keys/fixture-guest-on-primary-ssh.age".publicKeys =
+        [ "fixture-two-primary-key" ];
+      "secrets/vm-host-keys/fixture-guest-on-secondary-ssh.age".publicKeys =
+        [ "fixture-secondary-hv-key" ];
+    };
+    fixtureTwoHealthy = hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureTwoHealthySecrets);
+
+    fixtureSabotageASecrets = fixtureTwoHealthySecrets // {
+      "secrets/fixture-guest-on-secondary-token.age".publicKeys =
+        [ "fixture-guest-on-secondary-key" ];
+    };
+    fixtureSabotagedA = hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureSabotageASecrets);
+
+    fixtureSabotageBSecrets = fixtureTwoHealthySecrets // {
+      "secrets/fixture-guest-on-primary-token.age".publicKeys =
+        [ "fixture-guest-on-primary-key" ];
+    };
+    fixtureSabotagedB = hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureSabotageBSecrets);
+
+    fixtureUnregisteredHostArgs = (fixtureTwoArgs fixtureTwoHealthySecrets) // {
+      machines = fixtureTwoMachines // {
+        fixture-guest-on-unregistered = { type = "dev"; host = "fixture-unregistered-hv"; };
+      };
+      machineHostKeys = fixtureTwoMachineHostKeys // {
+        fixture-guest-on-unregistered = { active = "fixture-guest-on-unregistered-key"; staged = null; };
+      };
+      secretsRules = fixtureTwoHealthySecrets // {
+        "secrets/fixture-guest-on-unregistered-token.age".publicKeys =
+          [ "fixture-guest-on-unregistered-key" ];
+      };
+    };
+    rejects = args: !(builtins.tryEval (builtins.deepSeq (hypervisorRecipientDiagnostics args) true)).success;
   in
-  assert lib.assertMsg (fixtureHealthy.recipientGaps == [] && fixtureHealthy.hostKeyGaps == [])
+  assert lib.assertMsg (fixtureSingleHealthy.recipientGaps == [] && fixtureSingleHealthy.hostKeyGaps == [])
+    "hypervisor-recipient-coverage: a correctly-covered single-hypervisor fixture was refused";
+  assert lib.assertMsg (fixtureTwoHealthy.recipientGaps == [] && fixtureTwoHealthy.hostKeyGaps == [])
     "hypervisor-recipient-coverage: a correctly-covered two-hypervisor fixture was refused";
-  assert lib.assertMsg (fixtureSabotaged.recipientGaps == [
-    { secret = "secrets/fixture-guest-hosted-token.age"; guest = "fixture-guest-hosted"; }
-  ]) "hypervisor-recipient-coverage: sabotage accepted: a guest's recipient set named the guest but not its host hypervisor";
-  assert lib.assertMsg (fixtureSabotaged.hostKeyGaps == [])
-    "hypervisor-recipient-coverage: sabotage tripped an unrelated diagnostic";
+  assert lib.assertMsg (fixtureSabotagedA.recipientGaps == [
+    { secret = "secrets/fixture-guest-on-secondary-token.age"; guest = "fixture-guest-on-secondary"; }
+  ] && fixtureSabotagedA.hostKeyGaps == [])
+    "hypervisor-recipient-coverage: sabotage (a) accepted or tripped an unexpected diagnostic";
+  assert lib.assertMsg (fixtureSabotagedB.recipientGaps == [
+    { secret = "secrets/fixture-guest-on-primary-token.age"; guest = "fixture-guest-on-primary"; }
+  ] && fixtureSabotagedB.hostKeyGaps == [])
+    "hypervisor-recipient-coverage: sabotage (b) accepted or tripped an unexpected diagnostic";
+  assert lib.assertMsg (rejects fixtureUnregisteredHostArgs)
+    "hypervisor-recipient-coverage: sabotage (c) accepted: a guest named a host with no registered keys";
   assert lib.assertMsg (real.recipientGaps == [])
     "hypervisor-recipient-coverage: secrets.nix entries missing their guest's host hypervisor: ${
       lib.concatMapStringsSep ", " (g: "${g.secret} (${g.guest})") real.recipientGaps
