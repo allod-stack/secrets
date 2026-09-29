@@ -27,6 +27,7 @@
 , hypervisorIdentities
 , nexusIdentity
 , mkVmUsernames
+, machines
 }:
 {
   external-ssh-trust-targets = import ./external-ssh-trust-targets.nix {
@@ -60,5 +61,9 @@
 
   hypervisor-identities = import ./hypervisor-identities.nix {
     inherit lib pkgs hypervisorIdentities nexusIdentity mkVmUsernames;
+  };
+
+  hypervisor-recipient-coverage = import ./hypervisor-recipient-coverage.nix {
+    inherit lib pkgs identity secretsNix machineHostKeys machines;
   };
 }

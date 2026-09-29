@@ -180,6 +180,7 @@
           mkLocalAuthRefreshSources rotationRegistry mkPiCredentialContract
           piCredentialContract hypervisorIdentities nexusIdentity
           mkVmUsernames;
+        machines = inventory.lib.machines;
       });
   };
 }
