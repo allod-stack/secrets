@@ -1,8 +1,9 @@
 { lib, pkgs, identity, secretsNix, machineHostKeys, machines }:
   let
     # Contract: a secret naming a guest's key must also name a key of the
-    # hypervisor that runs that guest; the guest's vm-host-keys secret obeys
-    # the same rule.
+    # hypervisor that runs that guest; a guest registered in
+    # machine-host-keys.json must have its own vm-host-keys rule, and that
+    # rule obeys the same recipient contract.
     # Trap: the primary is never registered in machine-host-keys.json.
     hypervisorRecipientDiagnostics = { machines, secretsRules, primaryKeys, primaryName, machineHostKeys }:
       let
@@ -45,15 +46,19 @@
         ) guestNames;
 
         hostKeyGaps = lib.concatMap (g:
-          let
-            path = "secrets/vm-host-keys/${g}-ssh.age";
-            hvKeys = hypervisorKeysFor g;
-          in
-          builtins.seq hvKeys (
-            if secretsRules ? ${path} && !(hasAny hvKeys secretsRules.${path}.publicKeys)
-            then [ { secret = path; guest = g; } ]
-            else []
-          )
+          if !(machineHostKeys ? ${g}) then []
+          else
+            let
+              path = "secrets/vm-host-keys/${g}-ssh.age";
+              hvKeys = hypervisorKeysFor g;
+            in
+            builtins.seq hvKeys (
+              if !(secretsRules ? ${path})
+              then [ { secret = path; guest = g; reason = "the rule is missing"; } ]
+              else if !(hasAny hvKeys secretsRules.${path}.publicKeys)
+              then [ { secret = path; guest = g; reason = "recipients omit the host hypervisor's key"; } ]
+              else []
+            )
         ) guestNames;
       in { inherit recipientGaps hostKeyGaps; };
 
@@ -130,6 +135,19 @@
     };
     fixtureSabotagedB = hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureSabotageBSecrets);
 
+    fixtureHostKeyRecipientsSecrets = fixtureTwoHealthySecrets // {
+      "secrets/vm-host-keys/fixture-guest-on-secondary-ssh.age".publicKeys =
+        [ "fixture-unrelated-key" ];
+    };
+    fixtureSabotagedHostKeyRecipients =
+      hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureHostKeyRecipientsSecrets);
+
+    fixtureHostKeyMissingRuleSecrets =
+      builtins.removeAttrs fixtureTwoHealthySecrets
+        [ "secrets/vm-host-keys/fixture-guest-on-primary-ssh.age" ];
+    fixtureSabotagedHostKeyMissingRule =
+      hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureHostKeyMissingRuleSecrets);
+
     fixtureUnregisteredHostArgs = (fixtureTwoArgs fixtureTwoHealthySecrets) // {
       machines = fixtureTwoMachines // {
         fixture-guest-on-unregistered = { type = "dev"; host = "fixture-unregistered-hv"; };
@@ -156,6 +174,20 @@
     { secret = "secrets/fixture-guest-on-primary-token.age"; guest = "fixture-guest-on-primary"; }
   ] && fixtureSabotagedB.hostKeyGaps == [])
     "hypervisor-recipient-coverage: sabotage (b) accepted or tripped an unexpected diagnostic";
+  assert lib.assertMsg (fixtureSabotagedHostKeyRecipients.recipientGaps == []
+    && fixtureSabotagedHostKeyRecipients.hostKeyGaps == [
+      { secret = "secrets/vm-host-keys/fixture-guest-on-secondary-ssh.age";
+        guest = "fixture-guest-on-secondary";
+        reason = "recipients omit the host hypervisor's key"; }
+    ])
+    "hypervisor-recipient-coverage: sabotage (host-key recipients) accepted or tripped an unexpected diagnostic";
+  assert lib.assertMsg (fixtureSabotagedHostKeyMissingRule.recipientGaps == []
+    && fixtureSabotagedHostKeyMissingRule.hostKeyGaps == [
+      { secret = "secrets/vm-host-keys/fixture-guest-on-primary-ssh.age";
+        guest = "fixture-guest-on-primary";
+        reason = "the rule is missing"; }
+    ])
+    "hypervisor-recipient-coverage: sabotage (host-key rule missing) accepted or tripped an unexpected diagnostic";
   assert lib.assertMsg (rejects fixtureUnregisteredHostArgs)
     "hypervisor-recipient-coverage: sabotage (c) accepted: a guest named a host with no registered keys";
   assert lib.assertMsg (real.recipientGaps == [])
@@ -164,7 +196,7 @@
     }";
   assert lib.assertMsg (real.hostKeyGaps == [])
     "hypervisor-recipient-coverage: a guest's host-key secret is missing its host hypervisor: ${
-      lib.concatMapStringsSep ", " (g: "${g.secret} (${g.guest})") real.hostKeyGaps
+      lib.concatMapStringsSep ", " (g: "${g.secret} (${g.guest}): ${g.reason}") real.hostKeyGaps
     }";
   pkgs.runCommand "hypervisor-recipient-coverage-check" {} ''
     echo "hypervisor recipient coverage validation passed"
