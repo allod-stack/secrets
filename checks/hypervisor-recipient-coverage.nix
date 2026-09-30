@@ -46,19 +46,21 @@
         ) guestNames;
 
         hostKeyGaps = lib.concatMap (g:
-          if !(machineHostKeys ? ${g}) then []
-          else
-            let
-              path = "secrets/vm-host-keys/${g}-ssh.age";
-              hvKeys = hypervisorKeysFor g;
-            in
-            builtins.seq hvKeys (
-              if !(secretsRules ? ${path})
+          let
+            path = "secrets/vm-host-keys/${g}-ssh.age";
+            hvKeys = hypervisorKeysFor g;
+          in
+          builtins.seq hvKeys (
+            if !(secretsRules ? ${path})
+            then
+              # Registry absence excuses a missing rule, never a present one's recipients.
+              if machineHostKeys ? ${g}
               then [ { secret = path; guest = g; reason = "the rule is missing"; } ]
-              else if !(hasAny hvKeys secretsRules.${path}.publicKeys)
-              then [ { secret = path; guest = g; reason = "recipients omit the host hypervisor's key"; } ]
               else []
-            )
+            else if !(hasAny hvKeys secretsRules.${path}.publicKeys)
+            then [ { secret = path; guest = g; reason = "recipients omit the host hypervisor's key"; } ]
+            else []
+          )
         ) guestNames;
       in { inherit recipientGaps hostKeyGaps; };
 
@@ -148,6 +150,17 @@
     fixtureSabotagedHostKeyMissingRule =
       hypervisorRecipientDiagnostics (fixtureTwoArgs fixtureHostKeyMissingRuleSecrets);
 
+    fixtureUnregisteredGuestArgs = (fixtureTwoArgs fixtureTwoHealthySecrets) // {
+      machines = fixtureTwoMachines // {
+        fixture-guest-unregistered-with-rule = { type = "dev"; host = fixtureSecondaryName; };
+      };
+      secretsRules = fixtureTwoHealthySecrets // {
+        "secrets/vm-host-keys/fixture-guest-unregistered-with-rule-ssh.age".publicKeys =
+          [ "fixture-unrelated-key" ];
+      };
+    };
+    fixtureUnregisteredGuestWithRule = hypervisorRecipientDiagnostics fixtureUnregisteredGuestArgs;
+
     fixtureUnregisteredHostArgs = (fixtureTwoArgs fixtureTwoHealthySecrets) // {
       machines = fixtureTwoMachines // {
         fixture-guest-on-unregistered = { type = "dev"; host = "fixture-unregistered-hv"; };
@@ -188,6 +201,13 @@
         reason = "the rule is missing"; }
     ])
     "hypervisor-recipient-coverage: sabotage (host-key rule missing) accepted or tripped an unexpected diagnostic";
+  assert lib.assertMsg (fixtureUnregisteredGuestWithRule.recipientGaps == []
+    && fixtureUnregisteredGuestWithRule.hostKeyGaps == [
+      { secret = "secrets/vm-host-keys/fixture-guest-unregistered-with-rule-ssh.age";
+        guest = "fixture-guest-unregistered-with-rule";
+        reason = "recipients omit the host hypervisor's key"; }
+    ])
+    "hypervisor-recipient-coverage: sabotage (unregistered guest, present rule) accepted or tripped an unexpected diagnostic";
   assert lib.assertMsg (rejects fixtureUnregisteredHostArgs)
     "hypervisor-recipient-coverage: sabotage (c) accepted: a guest named a host with no registered keys";
   assert lib.assertMsg (real.recipientGaps == [])
