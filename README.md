@@ -284,9 +284,9 @@ output:
   value to the recipients `secrets.nix` declares, writes the file, and flips
   the state to `active`, where the check requires the file present. A
   `pending` entry with a file, or an `active` one without, fails the check.
-- `credentials` / `forgeSshKeys` / `rotationRegistry` / `githubCredentialTargets`
-  drive token and forge-key deployment; `age.secrets` files are read straight from
-  `${secrets}/<secret path>`.
+- `credentials`, `forgeSshKeys`, and `githubCredentialTargets` drive token, forge-key,
+  and per-user GitHub credential deployment; `rotationRegistry` drives `allod secret`
+  rotation and `credential-profiles` verification. `age.secrets` reads `${secrets}/<secret path>`.
 - `piCredentials`, `piProviderCredentials`, and `piCredentialProjections` expose
   the validated Pi credential contract. Each `devIdentities.<vm>` also carries
   only that VM's `piCredentials` and `piProviders` projection. A projected
