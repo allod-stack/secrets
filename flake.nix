@@ -39,23 +39,6 @@
     credentialEncodings = [ "rclone-obscure" ];
     inherit (import ./lib/credential-registry.nix { inherit lib credentialEncodings; })
       credentialRegistryDiagnostics validateCredentialRegistry;
-    # The credential-store URL grammar and its accept/reject vectors are data,
-    # not prose: this is the one table allod/archetypes, allod/nexus, and
-    # allod/tools are meant to read instead of each carrying a spelling that
-    # only a comment keeps in step.  Each cutover lands in its own repo, so
-    # nothing here fails when a copy that has not switched yet drifts.
-    credentialStoreUrl = builtins.fromJSON (builtins.readFile ./credential-store-url.json);
-
-    inherit (import ./lib/credential-store-url.nix { inherit lib credentialStoreUrl; })
-      isCredentialStoreUrlTemplate isCredentialStoreUrlSource credentialStoreUrlSourceClause;
-
-    inherit (import ./lib/local-auth-refresh.nix {
-        inherit lib isCredentialStoreUrlSource credentialStoreUrlSourceClause;
-      })
-      localAuthRefreshContract localAuthRefreshDeployedPath localAuthRefreshDeclaration
-      localAuthRefreshEntries localAuthRefreshDiagnostics localAuthRefreshSourcesFor
-      mkLocalAuthRefreshSources;
-
     rotationRegistry = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =
@@ -68,30 +51,13 @@
           (file: type: type == "regular" && lib.hasSuffix "-ssh.age" file)
           (builtins.readDir vmHostKeyDir));
 
-    devIdentities = builtins.mapAttrs (name: vm:
-      let
-        # A dev machine that does not push does not need Forge credentials.
-        # Opting out keeps a throwaway machine from requiring credential
-        # material that only a human can mint, which would otherwise gate its
-        # very existence. One flag nulls both files: the per-machine Forge
-        # HTTPS token and the shared agent PR token. The agent token must
-        # follow the flag because a non-pushing machine is not a recipient of
-        # the shared ciphertext — handing it the file would deploy a secret
-        # the machine cannot decrypt, failing at first activation. Keeping the
-        # two paired is this template's job: the dev builder treats each file
-        # as independently optional and does not check them against each other.
-        forgeAccess = vm.forgeAccess or true;
-      in {
+    devIdentities = builtins.mapAttrs (name: vm: {
       inherit (identity) username forgeHost forgePort;
       inherit (vm) sshKeyName;
       forgeUser = identity.forgeUser;
       gpgSigningKey = identity.gpgSigningKey;
-      forgeTokenFile =
-        if forgeAccess
-        then ./secrets + "/forgejo-https-token-${name}.age"
-        else null;
       agentTokenFile =
-        if forgeAccess
+        if vm.forgeAccess or true
         then ./secrets + "/agent-pr-token.age"
         else null;
       gpgPublicKeyFile = null;
@@ -108,7 +74,6 @@
       inherit (identity) username hostname forgeHost forgePort;
       sshPublicKey = identity.hostPublicKey;
       sshPublicKeys = identity.hostPublicKeys;
-      forgeTokenFile = null;
       # A deployment sets each of these to a Nix path, e.g. `./secrets + "/<name>.age"`
       # (a path, not a string; the same spelling the dev-VM token fields above use).
       userForgejoTokenFile = null;
@@ -147,12 +112,6 @@
     lib.identity = identity;
     lib.forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
     lib.rotationRegistry = rotationRegistry;
-    lib.credentialStoreUrl = credentialStoreUrl;
-    lib.isCredentialStoreUrlTemplate = isCredentialStoreUrlTemplate;
-    lib.isCredentialStoreUrlSource = isCredentialStoreUrlSource;
-    lib.localAuthRefreshDiagnostics = localAuthRefreshDiagnostics;
-    lib.mkLocalAuthRefreshSources = mkLocalAuthRefreshSources;
-    lib.localAuthRefreshSources = mkLocalAuthRefreshSources rotationRegistry;
     lib.machineHostKeys = machineHostKeys;
     lib.vmHostKeySecretFiles = vmHostKeySecretFiles;
     lib.githubCredentialTargets = {};
@@ -174,10 +133,7 @@
       import ./checks {
         inherit lib pkgs self identity devSshHosts devIdentities credentials
           secretsNix machineHostKeys credentialRegistryDiagnostics
-          validateCredentialRegistry credentialStoreUrl
-          isCredentialStoreUrlTemplate isCredentialStoreUrlSource
-          credentialStoreUrlSourceClause localAuthRefreshDiagnostics
-          mkLocalAuthRefreshSources rotationRegistry mkPiCredentialContract
+          validateCredentialRegistry mkPiCredentialContract
           piCredentialContract hypervisorIdentities nexusIdentity
           mkVmUsernames;
         machines = inventory.lib.machines;

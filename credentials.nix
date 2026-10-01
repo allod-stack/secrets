@@ -93,15 +93,4 @@ hostEntries // activeEntries // stagedEntries // forgeGitEntries // {
     ];
     rotation_state = "active";
   };
-
-  forgejo-https-token-allod-dev = {
-    name           = "forgejo-https-token-allod-dev";
-    kind           = "agent";
-    owner          = "allod-agent";
-    public_key     = null;
-    consumers      = [
-      { type = "agenix"; repo = "secrets"; secret = "secrets/forgejo-https-token-allod-dev.age"; }
-    ];
-    rotation_state = "active";
-  };
 }

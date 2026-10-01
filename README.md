@@ -27,14 +27,11 @@ This repo owns:
   deployment default, never provider metadata or bearer values
 - the agenix recipient map (`secrets.nix`) — which public keys may decrypt which
   `.age` file
-- the encrypted secret blobs (`secrets/**.age`) — forge tokens, the forge git key,
-  and per-VM SSH host keys
+- the encrypted secret blobs (`secrets/**.age`) — agent API tokens, the forge git
+  key, and per-VM SSH host keys
 - public-key registries (`machine-host-keys.json`, `forge-ssh-keys.json`,
   `keys/*.pub`)
 - the credential rotation registry (`rotation-registry.json`)
-- the credential-store URL grammar and its accept/reject vectors
-  (`credential-store-url.json`) — the table allod/archetypes, allod/nexus, and
-  allod/tools are meant to read; each cutover lands in its own repo
 - git policy data (`git/*`) — branch-protection, signing, PR-branch, and
   external-remote allowlists
 - flake `checks` that keep all of the above internally consistent
@@ -54,7 +51,7 @@ This repo does **not** own:
 | Output | Type | Description |
 |---|---|---|
 | `lib.identity` | attrs | raw `identity.nix` — username, email, forge host/port/user, host public key(s), VM rosters, SSH host aliases, external SSH trust targets |
-| `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, forge/agent token file paths, GPG signing key, `sshHosts` (the VM's own external SSH aliases, defaulted) |
+| `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, agent token file path, GPG signing key, `sshHosts` (the VM's own external SSH aliases, defaulted) |
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
 | `lib.nexusIdentity` | attrs | the primary hypervisor's identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null, or a Nix path to an `.age` file), `operatorPublicKeys` (always `[ ]` for the primary) |
 | `lib.hypervisorIdentities` | attrs | every hypervisor identity, keyed by hostname; today exactly `{ ${nexusIdentity.hostname} = nexusIdentity; }`. Each entry's `operatorPublicKeys` lists the keys allowed to SSH into that hypervisor |
@@ -62,12 +59,6 @@ This repo does **not** own:
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
 | `lib.rotationRegistry` | attrs | credential rotation registry, including each credential's rendered-value template and verification commands (from `rotation-registry.json`); validated on read, so a malformed registry fails every consumer |
-| `lib.credentialStoreUrl` | attrs | the credential-store URL grammar as data (from `credential-store-url.json`): `line`, `blank_line`, and the `vectors` table each consumer's tests are meant to read |
-| `lib.isCredentialStoreUrlTemplate` | function | the grammar half alone: true when a credential declares exactly one credential-store URL line, whatever `format` it carries. A consumer with its own `format` policy composes this one rather than respelling the grammar |
-| `lib.isCredentialStoreUrlSource` | function | that grammar plus this registry's own `format` policy — a credential carrying `format` is refused — the predicate `refresh-local-auth` and the archetypes checks are to consume instead of redefining |
-| `lib.localAuthRefreshDiagnostics` | function | plain-English problems with a registry's `local_auth_refresh` entries, empty when there are none |
-| `lib.mkLocalAuthRefreshSources` | function | the same validated projection as a function of a caller-supplied registry: asserts `lib.localAuthRefreshDiagnostics` is empty, then projects; `lib.localAuthRefreshSources` is this applied to `rotation-registry.json`, and a fork applies it to its own registry instead of re-spelling the mapping |
-| `lib.localAuthRefreshSources` | attrs | group alias -> list of `{ contract; system; local_username; source_credential; secret_path; }`, validated on read so a consumer never re-derives the URL grammar |
 | `lib.credentialEncodings` | list of strings | supported credential value encoders; currently `rclone-obscure` |
 | `lib.machineHostKeys` | attrs | per-VM SSH host public keys, active + staged (from `machine-host-keys.json`) |
 | `lib.vmHostKeySecretFiles` | attrs | machine name -> path of its `*-ssh.age` host-key secret, derived by scanning `secrets/vm-host-keys/` |
@@ -84,8 +75,6 @@ This repo does **not** own:
 | `lib.consumedInventorySource` | flake input | exact inventory source consumed while validating targets |
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.credential-registry` | derivation | validates the public credential rotation registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
-| `checks.<platform>.credential-store-url` | derivation | asserts `lib.isCredentialStoreUrlSource` agrees with every vector in `credential-store-url.json`, naming any that disagrees, and that `lib.isCredentialStoreUrlTemplate` agrees on every vector carrying no `format` |
-| `checks.<platform>.local-auth-refresh` | derivation | forces the public registry's refresh projection and runs one sabotage registry per `local_auth_refresh` validator, pinning each by its diagnostic |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 | `checks.<platform>.dev-ssh-hosts` | derivation | validates the per-dev-VM external SSH alias projection: a machine without `sshHosts` projects empty, an entry gains its VM's own key and `identitiesOnly` while keeping its own fields, and one sabotage witness per refusal (reserved name, non-literal alias, two aliases differing only by case, malformed entry, an `extraOptions` key that is not a bare directive, a newline inside any string field) |
@@ -97,7 +86,7 @@ The only flake inputs are `nixpkgs` (nixos-25.11) and `inventory`.
 
 The check suite lives under `checks/`, one file per check, and `checks/default.nix` is the index that hands each check its arguments. `flake.nix` passes that index the composition — `pkgs`, the identity and credential data, and the validators `lib/` exposes over them — and a check's own argument list is the whole of what it reads. Adding a check is a new file and one entry in the index. Its derivation name is what a fork excludes or re-exports by, so it stays unique and does not change when a check moves.
 
-The registry validators a fork's own data must satisfy — `credentialRegistryDiagnostics` / `validateCredentialRegistry`, the credential-store-URL predicates, and the local-auth-refresh contract and diagnostics — live in `lib/` beside `lib/dev-ssh-hosts.nix` and the Pi credential contract files, not in `flake.nix`; each takes the data it validates as an argument rather than closing over it.
+The registry validators a fork's own data must satisfy — `credentialRegistryDiagnostics` / `validateCredentialRegistry` — live in `lib/` beside `lib/dev-ssh-hosts.nix` and the Pi credential contract files, not in `flake.nix`; each takes the data it validates as an argument rather than closing over it.
 
 The secrets contract deliberately does not import profiles. It validates Pi
 credential IDs, targets, token names, deployment defaults, recipient keys,
@@ -121,20 +110,25 @@ it transforms the secret before substitution. The template is otherwise
 byte-preserving, including trailing newlines. `value` holds only `template`
 and `encode`; any other field fails the check.
 
-The public example is a new-shape credential:
+A registry group contains one or more credentials:
 
 ```json
 {
-  "credential": "forgejo-https-token-allod-dev",
-  "secret_path": "secrets/forgejo-https-token-allod-dev.age",
-  "value": { "template": "https://allod-agent:{secret}@forge.anarch.diy" },
-  "targets": [
-    {
-      "system": "allod-dev",
-      "deployed_path": "/root/.git-credentials",
-      "verify": "sudo env HOME=/root GIT_TERMINAL_PROMPT=0 git ls-remote https://forge.anarch.diy/allod/tools.git HEAD"
-    }
-  ]
+  "service-api": {
+    "credentials": [
+      {
+        "credential": "service-api-token",
+        "secret_path": "secrets/service-api-token.age",
+        "targets": [
+          {
+            "system": "example-host",
+            "deployed_path": "/run/credentials/service-api-token",
+            "verify": "service-cli token verify"
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -151,11 +145,9 @@ tailscale status
 ```
 
 A credential carrying the retired `format` field, or a target whose `verify`
-is not a string, fails the check. Existing group metadata, including
-`local_auth_refresh`, remains structured and unchanged; the registry check
-requires only the group `credentials` list for this contract. Credentials in
-one group must agree on `value.encode`, because one prompted value serves
-that group.
+is not a string, fails the check. The registry check requires each group to
+have a `credentials` list. Credentials in one group must agree on
+`value.encode`, because one prompted value serves that group.
 
 ## Pi credential registry schema
 
@@ -188,9 +180,9 @@ of SSH public keys allowed to decrypt it.
 
 - The **host identity key** (the `nexus` SSH host key) is a recipient of *every*
   secret — one key decrypts the whole store.
-- **Per-VM runtime secrets** (forge HTTPS token, agent PR token, forge git key) are
-  additionally encrypted to the owning VM's host key(s), so the running VM can
-  decrypt them via agenix on boot.
+- **Per-VM runtime secrets** (agent PR token and forge git key) are additionally
+  encrypted to the owning VM's host key(s), so the running VM can decrypt them
+  via agenix on boot.
 - **VM SSH host-key secrets** (`secrets/vm-host-keys/*-ssh.age`) are encrypted to
   the host key only; `nexus` injects the decrypted host key into a VM at provision
   time (before first boot) so agenix can then unlock that VM's other secrets.
@@ -219,20 +211,17 @@ secrets.nix                   agenix recipient map (.age path -> recipient publi
 checks/default.nix            the check suite index; hands each check file its inputs
 checks/*.nix                  one file per check (see "Checks" below)
 lib/credential-registry.nix   registry-shape validation (`credentialRegistryDiagnostics`, `validateCredentialRegistry`)
-lib/credential-store-url.nix  the credential-store URL grammar/policy predicates
-lib/local-auth-refresh.nix    the local-auth-refresh contract, diagnostics, and projection
 lib/dev-ssh-hosts.nix         projects a dev VM's own external SSH aliases
 lib/pi-credential-contract.nix validates and derives Pi credential projections
 lib/pi-credential-recipients.nix standalone recipient generator used by agenix
 lib/pi-credential-schema.nix shared strict schema for flake and standalone agenix paths
 machine-host-keys.json        per-VM SSH host public keys (active/staged)
 forge-ssh-keys.json           forge git SSH key registry
-rotation-registry.json        credential rotation registry: rendered-value templates, verification commands, and local-auth-refresh map
-credential-store-url.json     credential-store URL grammar plus the shared accept/reject vector table
+rotation-registry.json        credential rotation registry: rendered-value templates and verification commands
 keys/
   allod_vm.pub                forge git SSH public key (checked against the registry)
 secrets/
-  *.age                       encrypted forge tokens and forge git key; in a
+  *.age                       encrypted agent API tokens and forge git key; in a
                               deployment, also the ciphertexts named by
                               userForgejoTokenFile and siteHostingConfigFile,
                               which the hypervisor places at

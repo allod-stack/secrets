@@ -139,7 +139,7 @@
         name = "value-shape";
         registry = withGroup "tokens" [
           newPlainCredential
-          (newPlainCredential // { value = "https://user:{secret}@host"; })
+          (newPlainCredential // { value = "not-an-attribute-set"; })
         ];
         diagnostic = "value must be an attribute set";
       }

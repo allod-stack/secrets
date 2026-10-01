@@ -15,13 +15,6 @@
 , machineHostKeys
 , credentialRegistryDiagnostics
 , validateCredentialRegistry
-, credentialStoreUrl
-, isCredentialStoreUrlTemplate
-, isCredentialStoreUrlSource
-, credentialStoreUrlSourceClause
-, localAuthRefreshDiagnostics
-, mkLocalAuthRefreshSources
-, rotationRegistry
 , mkPiCredentialContract
 , piCredentialContract
 , hypervisorIdentities
@@ -42,14 +35,6 @@
     inherit lib pkgs credentialRegistryDiagnostics validateCredentialRegistry;
   };
 
-  credential-store-url = import ./credential-store-url.nix {
-    inherit lib pkgs credentialStoreUrl isCredentialStoreUrlSource isCredentialStoreUrlTemplate;
-  };
-
-  local-auth-refresh = import ./local-auth-refresh.nix {
-    inherit lib pkgs localAuthRefreshDiagnostics mkLocalAuthRefreshSources
-      credentialStoreUrlSourceClause rotationRegistry;
-  };
 
   pi-credential-registry = import ./pi-credential-registry.nix {
     inherit lib pkgs mkPiCredentialContract piCredentialContract secretsNix;
