@@ -99,14 +99,15 @@ input edge here.
 
 ## Credential rotation registry schema
 
-`rotation-registry.json` declares the non-secret text around a credential and
-the command that verifies each deployed target. `service` names the
-credential's issuer, `forgejo` for a Forgejo UI token or `none` for anything
-else; the check does not validate it, `allod secret` refuses any other
-value. A new credential omits `value` when its plaintext is the secret
-itself; otherwise `value.template` contains exactly one literal `{secret}`.
-`value.encode`, when present, must be exported by `lib.credentialEncodings`;
-it transforms the secret before substitution. The template is otherwise
+`rotation-registry.json` groups credentials that rotate together and declares
+the command that verifies each deployed target. Group metadata such as
+`service` is interpreted by `allod secret`; this repo validates the credential
+list, value templates, and verification commands.
+
+A credential omits `value` when the ciphertext plaintext is the secret itself.
+Otherwise, `value.template` contains exactly one literal `{secret}`.
+`value.encode`, when present, must be exported by `lib.credentialEncodings` and
+transforms the secret before substitution. The template is otherwise
 byte-preserving, including trailing newlines. `value` holds only `template`
 and `encode`; any other field fails the check.
 
@@ -115,15 +116,20 @@ A registry group contains one or more credentials:
 ```json
 {
   "service-api": {
+    "registry_alias": "service-api",
+    "service": "none",
+    "rotation_strategy": "overlap",
     "credentials": [
       {
         "credential": "service-api-token",
         "secret_path": "secrets/service-api-token.age",
+        "value": { "template": "Authorization: Bearer {secret}" },
         "targets": [
           {
             "system": "example-host",
+            "kind": "service-vm",
             "deployed_path": "/run/credentials/service-api-token",
-            "verify": "service-cli token verify"
+            "verify": "service-cli token verify < /run/credentials/service-api-token"
           }
         ]
       }
@@ -134,15 +140,9 @@ A registry group contains one or more credentials:
 
 Every new-shape target has a one-line `verify` command that is not empty and
 not only whitespace; consumers print it verbatim, prefixing a remote target
-with SSH. Every credential declares at least one target and every group at
-least one credential. Typical commands replace the former probe names directly:
-
-```sh
-sudo -u allod forge token verify
-git ls-remote https://forge.anarch.diy/allod/tools.git HEAD
-rclone lsd shared:
-tailscale status
-```
+with SSH. The command must exercise the deployed credential against its issuer,
+not merely test that its file exists. Every credential declares at least one
+target and every group at least one credential.
 
 A credential carrying the retired `format` field, or a target whose `verify`
 is not a string, fails the check. The registry check requires each group to

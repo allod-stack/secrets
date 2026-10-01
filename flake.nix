@@ -56,6 +56,7 @@
       inherit (vm) sshKeyName;
       forgeUser = identity.forgeUser;
       gpgSigningKey = identity.gpgSigningKey;
+      # An opted-out VM is not a recipient of the shared agent-token ciphertext.
       agentTokenFile =
         if vm.forgeAccess or true
         then ./secrets + "/agent-pr-token.age"

@@ -35,7 +35,6 @@
     inherit lib pkgs credentialRegistryDiagnostics validateCredentialRegistry;
   };
 
-
   pi-credential-registry = import ./pi-credential-registry.nix {
     inherit lib pkgs mkPiCredentialContract piCredentialContract secretsNix;
   };
