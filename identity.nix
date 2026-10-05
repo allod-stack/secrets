@@ -15,6 +15,9 @@ rec {
   devVMs = {
     allod-dev = {
       sshKeyName = "allod_vm";
+      # false: this VM gets no agent token and no forge identity; every repo
+      # it checks out must be host-provided (inventory `host_provided_repos`).
+      forgeAccess = true;
       # External hosts this VM reaches with its own key, rendered beside its
       # forge entry. Never a machine of the deployment or the forge host.
       sshHosts = {
@@ -32,10 +35,12 @@ rec {
   };
 
   sshHosts = {
+    # The hypervisor reaches a VM as that VM's login user with its own host
+    # key, the one the VM authorizes; the forge key is the VM's, not ours.
     allod-dev = {
       hostname = "192.0.2.10";
-      user = "allod";
-      identityFile = "~/.ssh/allod_vm";
+      user = username;
+      identityFile = "~/.ssh/host";
     };
     privacy-1 = {
       hostname = "192.0.2.11";

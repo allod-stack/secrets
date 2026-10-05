@@ -81,16 +81,18 @@ let
     name = forgeKey;
     value = mkForgeGitEntry forgeKey;
   }) forgeKeyNames);
-in
-hostEntries // activeEntries // stagedEntries // forgeGitEntries // {
-  agent-pr-token = {
-    name           = "agent-pr-token";
-    kind           = "agent";
-    owner          = "allod-agent";
-    public_key     = null;
-    consumers      = [
-      { type = "agenix"; repo = "secrets"; secret = "secrets/agent-pr-token.age"; }
-    ];
-    rotation_state = "active";
+  forgeAccessVMs = import ./lib/forge-access-vms.nix { inherit identity; };
+  agentTokenEntries = if forgeAccessVMs == [ ] then { } else {
+    agent-pr-token = {
+      name           = "agent-pr-token";
+      kind           = "agent";
+      owner          = "allod-agent";
+      public_key     = null;
+      consumers      = [
+        { type = "agenix"; repo = "secrets"; secret = "secrets/agent-pr-token.age"; }
+      ];
+      rotation_state = "active";
+    };
   };
-}
+in
+hostEntries // activeEntries // stagedEntries // forgeGitEntries // agentTokenEntries

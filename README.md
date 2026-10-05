@@ -182,7 +182,13 @@ of SSH public keys allowed to decrypt it.
   secret — one key decrypts the whole store.
 - **Per-VM runtime secrets** (agent PR token and forge git key) are additionally
   encrypted to the owning VM's host key(s), so the running VM can decrypt them
-  via agenix on boot.
+  via agenix on boot. Both lines are derived, not spelled out: the token line
+  lists every dev VM whose `forgeAccess` is not `false` and is absent when
+  there is none, and the forge-key lines come from `forge-ssh-keys.json`. A
+  dev VM with `forgeAccess = false` gets no token and no forge identity; its
+  repos must be host-provided (inventory `host_provided_repos`), and a fork
+  in which no VM has forge access carries no token ciphertext at all
+  (`lib/forge-access-vms.nix` is the one place that decides it).
 - **VM SSH host-key secrets** (`secrets/vm-host-keys/*-ssh.age`) are encrypted to
   the host key only; `nexus` injects the decrypted host key into a VM at provision
   time (before first boot) so agenix can then unlock that VM's other secrets.

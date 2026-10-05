@@ -1,5 +1,6 @@
 let
   machineHostKeys = builtins.fromJSON (builtins.readFile ./machine-host-keys.json);
+  forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
   identity = import ./identity.nix;
   piCredentials = builtins.fromJSON (builtins.readFile ./pi-credentials.json);
 
@@ -12,10 +13,23 @@ let
     inherit machineHostKeys;
     hypervisorPublicKeys = identity.hostPublicKeys;
   };
-in {
-  "secrets/agent-pr-token.age".publicKeys = [ hostKey ] ++ vmKeys "allod-dev";
-  "secrets/allod-dev-forge-key.age".publicKeys = [ hostKey ] ++ vmKeys "allod-dev";
-  "secrets/vm-host-keys/nexus-ssh.age".publicKeys = [ hostKey ];
-  "secrets/vm-host-keys/allod-dev-ssh.age".publicKeys = [ hostKey ];
-  "secrets/vm-host-keys/privacy-1-ssh.age".publicKeys = [ hostKey ];
-} // piCredentialRecipients
+
+  # Unlisted when no VM has forge access, so agenix never asks for it.
+  forgeAccessVMs = import ./lib/forge-access-vms.nix { inherit identity; };
+  agentTokenRecipients = if forgeAccessVMs == [ ] then { } else {
+    "secrets/agent-pr-token.age".publicKeys =
+      [ hostKey ] ++ builtins.concatMap vmKeys forgeAccessVMs;
+  };
+
+  forgeKeyRecipients = builtins.listToAttrs (map (name: {
+    name = forgeSshKeys.${name}.secret;
+    value.publicKeys = [ hostKey ] ++ vmKeys forgeSshKeys.${name}.owner;
+  }) (builtins.attrNames forgeSshKeys));
+
+  # Host keys, the hypervisor's own included, are readable by the hypervisor alone.
+  vmHostKeyRecipients = builtins.listToAttrs (map (vm: {
+    name = "secrets/vm-host-keys/${vm}-ssh.age";
+    value.publicKeys = [ hostKey ];
+  }) ([ identity.hostname ] ++ builtins.attrNames machineHostKeys));
+in
+agentTokenRecipients // forgeKeyRecipients // vmHostKeyRecipients // piCredentialRecipients
