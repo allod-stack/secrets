@@ -165,6 +165,66 @@
     };
     compatibilityFixture = mkPiCredentialContract compatibilityArgs;
 
+    mixedRegistry = {
+      mixed = {
+        targets = [ "dev-a" { name = "dev-b"; token = "dev-b-only"; } ];
+        providers = [ "delta" ];
+        tokens = [ "shared-tok" "dev-b-only" ];
+        defaultToken = "shared-tok";
+      };
+    };
+    mixedFixtureArgs = fixtureArgs // { registry = mixedRegistry; };
+    mixedFixtureWithoutDeclared = mkPiCredentialContract mixedFixtureArgs;
+    mixedFixture = mkPiCredentialContract (mixedFixtureArgs // {
+      declaredRecipients = mixedFixtureWithoutDeclared.recipients;
+    });
+    mixedSharedRecipients = [ "forge-host-active" "forge-host-staged" "dev-a-active" ];
+    mixedOverrideRecipients = [ "forge-host-active" "forge-host-staged" "dev-b-active" "dev-b-staged" ];
+
+    # Widening a per-target ciphertext's recipients must fail the check.
+    mixedNarrownessSabotage = mixedFixtureArgs // {
+      declaredRecipients = mixedFixtureWithoutDeclared.recipients // {
+        "secrets/pi-credentials/mixed/dev-b-only.age".publicKeys =
+          mixedFixtureWithoutDeclared.recipients."secrets/pi-credentials/mixed/dev-b-only.age".publicKeys
+          ++ [ "dev-a-active" ];
+      };
+    };
+    unknownTargetTokenSabotage = mixedFixtureArgs // {
+      registry.mixed = mixedRegistry.mixed // {
+        targets = [ "dev-a" { name = "dev-b"; token = "absent-token"; } ];
+      };
+    };
+    duplicateTargetNameSabotage = mixedFixtureArgs // {
+      registry.mixed = mixedRegistry.mixed // {
+        targets = [ "dev-a" { name = "dev-a"; token = "dev-b-only"; } ];
+      };
+    };
+    malformedTargetObjectSabotage = mixedFixtureArgs // {
+      registry.mixed = mixedRegistry.mixed // {
+        targets = [ "dev-a" { name = "dev-b"; } ];
+      };
+    };
+    duplicateTokenClaimSabotage = mixedFixtureArgs // {
+      registry.mixed = mixedRegistry.mixed // {
+        targets = [ { name = "dev-a"; token = "dev-b-only"; } { name = "dev-b"; token = "dev-b-only"; } ];
+      };
+    };
+    defaultTokenClaimedByOverrideSabotage = mixedFixtureArgs // {
+      registry.mixed = mixedRegistry.mixed // {
+        defaultToken = "dev-b-only";
+      };
+    };
+
+    disjointProviderRegistry = {
+      epsilon-a = { targets = [ "dev-a" ]; providers = [ "epsilon" ]; tokens = [ "tok-a" ]; defaultToken = "tok-a"; };
+      epsilon-b = { targets = [ "dev-b" ]; providers = [ "epsilon" ]; tokens = [ "tok-b" ]; defaultToken = "tok-b"; };
+    };
+    disjointProviderContract = mkPiCredentialContract (fixtureArgs // { registry = disjointProviderRegistry; });
+    disjointProviderRecipientsAccepted = (builtins.tryEval
+      (builtins.deepSeq disjointProviderContract.recipients true)).success;
+    disjointProviderCredentialsRejected = !(builtins.tryEval
+      (builtins.deepSeq disjointProviderContract.providerCredentials true)).success;
+
     actualPiSecrets = lib.filterAttrs
       (path: _: lib.hasPrefix "secrets/pi-credentials/" path)
       secretsNix;
@@ -317,6 +377,43 @@
     "pi-credential-registry: standalone untargeted duplicate-recipient-key sabotage was accepted";
   assert lib.assertMsg (rejectsProviderReferences [ "alpha" "beta" ])
     "pi-credential-registry: unknown provider sabotage was accepted";
+  assert lib.assertMsg (mixedFixture.recipients == {
+    "secrets/pi-credentials/mixed/shared-tok.age".publicKeys = mixedSharedRecipients;
+    "secrets/pi-credentials/mixed/dev-b-only.age".publicKeys = mixedOverrideRecipients;
+  }) "pi-credential-registry: mixed shared/per-target recipient derivation drifted";
+  assert lib.assertMsg (
+    !(builtins.elem "dev-a-active" mixedOverrideRecipients)
+  ) "pi-credential-registry: per-target ciphertext must list exactly one machine beside the hypervisor";
+  assert lib.assertMsg (mixedFixture.projections.dev-a.credentials.mixed == {
+    providers = [ "delta" ];
+    tokens."shared-tok".file = "/synthetic-secrets/pi-credentials/mixed/shared-tok.age";
+    defaultToken = "shared-tok";
+  }) "pi-credential-registry: shared-target projection must not leak another target's override token";
+  assert lib.assertMsg (mixedFixture.projections.dev-b.credentials.mixed == {
+    providers = [ "delta" ];
+    tokens."dev-b-only".file = "/synthetic-secrets/pi-credentials/mixed/dev-b-only.age";
+    defaultToken = "dev-b-only";
+  }) "pi-credential-registry: per-target projection did not resolve through its own override";
+  assert lib.assertMsg (rejects mixedNarrownessSabotage)
+    "pi-credential-registry: widened per-target recipient set was accepted";
+  assert lib.assertMsg (rejects unknownTargetTokenSabotage)
+    "pi-credential-registry: unknown target-token-override sabotage was accepted";
+  assert lib.assertMsg (rejects duplicateTargetNameSabotage)
+    "pi-credential-registry: duplicate target name across string/object representations was accepted";
+  assert lib.assertMsg (rejects malformedTargetObjectSabotage)
+    "pi-credential-registry: target object missing its token field was accepted";
+  assert lib.assertMsg (rejects duplicateTokenClaimSabotage)
+    "pi-credential-registry: token claimed by two targets was accepted";
+  assert lib.assertMsg (rejects defaultTokenClaimedByOverrideSabotage)
+    "pi-credential-registry: defaultToken naming an override-claimed token was accepted";
+  assert lib.assertMsg disjointProviderRecipientsAccepted
+    "pi-credential-registry: same provider split across disjoint-target credentials had its recipients rejected";
+  assert lib.assertMsg disjointProviderCredentialsRejected
+    "pi-credential-registry: provider split across disjoint-target credentials must throw from providerCredentials";
+  assert lib.assertMsg (disjointProviderContract.projections.dev-a.providers == { epsilon = "epsilon-a"; })
+    "pi-credential-registry: disjoint-target projection for dev-a drifted";
+  assert lib.assertMsg (disjointProviderContract.projections.dev-b.providers == { epsilon = "epsilon-b"; })
+    "pi-credential-registry: disjoint-target projection for dev-b drifted";
   pkgs.runCommand "pi-credential-registry-check" {} ''
     echo "Pi credential registry validation and sabotage passed"
     touch "$out"

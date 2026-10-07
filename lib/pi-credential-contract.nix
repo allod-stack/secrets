@@ -15,9 +15,12 @@ let
   inherit (schema)
     allProviders
     credentialIds
-    duplicateProviders
+    duplicateProviderTargets
     providersFor
     safeRegistry
+    targetNameOf
+    targetNamesFor
+    targetTokenOf
     targetsFor
     tokensFor
     unique
@@ -27,13 +30,13 @@ let
     builtins.filter
       (value: builtins.length (builtins.filter (other: other == value) values) > 1)
       (unique values);
-  allTargets = unique (builtins.concatLists (map targetsFor credentialIds));
+  allTargetNames = unique (builtins.concatLists (map targetNamesFor credentialIds));
   unknownTargets = builtins.filter
     (target: !(builtins.isString target) || !(builtins.hasAttr target machines))
-    allTargets;
+    allTargetNames;
   knownTargets = builtins.filter
     (target: builtins.isString target && builtins.hasAttr target machines)
-    allTargets;
+    allTargetNames;
   unsupportedTargets = builtins.filter
     (target:
       let machine = machines.${target};
@@ -125,7 +128,7 @@ let
   schemaErrors = schema.errors;
 
   referenceErrors =
-    lib.optional (duplicateProviders != []) "providers referenced by multiple credentials: ${lib.concatStringsSep ", " duplicateProviders}"
+    lib.optional (duplicateProviderTargets != []) "providers referenced by multiple credentials for the same target: ${lib.concatStringsSep ", " duplicateProviderTargets}"
     ++ lib.optional (unknownTargets != []) "unknown targets: ${lib.concatStringsSep ", " unknownTargets}"
     ++ lib.optional (unsupportedTargets != []) "targets must be libvirt dev VMs with identities: ${lib.concatStringsSep ", " unsupportedTargets}"
     ++ lib.optional (missingCiphertexts != []) "missing ciphertexts: ${lib.concatMapStringsSep ", " (pair: relativeCiphertextPath pair.credential pair.token) missingCiphertexts}";
@@ -166,11 +169,21 @@ let
     recipients = recipientErrors;
   };
 
+  # A flat provider -> credential map, for callers that need the common
+  # case of one credential per provider. A provider legitimately split
+  # across credentials for disjoint targets has no single answer here;
+  # `providerCredentialsChecked` throws for that case and sends per-target
+  # callers to `projections` instead.
   providerCredentialsRaw = builtins.listToAttrs (builtins.concatLists (map
     (credential: map
       (provider: { name = provider; value = credential; })
       (providersFor credential))
     credentialIds));
+  providersInMultipleCredentials = duplicates allProviders;
+  providerCredentialsChecked =
+    if providersInMultipleCredentials != []
+    then throw "pi-credential-contract: provider claimed by more than one credential, use `projections` for per-target consumers: ${lib.concatStringsSep ", " providersInMultipleCredentials}"
+    else providerCredentialsRaw;
 
   credentialInventoryRaw = builtins.mapAttrs
     (credential: _: {
@@ -189,28 +202,61 @@ let
     })
     safeRegistry;
 
+  # A target resolves its token through its own entry's override, if the
+  # credential named one for it, else through the credential's default
+  # (today's meaning, unchanged). An overridden target's projection is
+  # narrowed to that one token: it is never a recipient of the credential's
+  # other ciphertexts, so listing them would promise access it doesn't have.
+  # Symmetrically, a shared (plain-string) target's projection drops any
+  # token claimed by another target's override, since that ciphertext's
+  # recipients narrowed to the override alone.
+  tokenOverrideFor = target: entry:
+    let
+      matches = builtins.filter
+        (e: !(builtins.isString e) && targetNameOf e == target)
+        entry.targets;
+    in if matches == [] then null else targetTokenOf (builtins.head matches);
+  claimedTokensOf = entry:
+    unique (builtins.concatMap
+      (e: if builtins.isString e then [] else [ (targetTokenOf e) ])
+      entry.targets);
+
   projectionFor = target:
     let
       targetCredentials = lib.filterAttrs
-        (_: entry: builtins.elem target entry.targets)
+        (_: entry: builtins.elem target (map targetNameOf entry.targets))
         safeRegistry;
-      targetProviderCredentials = lib.filterAttrs
-        (_: credential: builtins.hasAttr credential targetCredentials)
-        providerCredentialsRaw;
+      targetProviderCredentials = builtins.listToAttrs (builtins.concatLists (map
+        (credential: map
+          (provider: { name = provider; value = credential; })
+          (providersFor credential))
+        (builtins.attrNames targetCredentials)));
     in {
       # Names and paths only: no endpoint metadata and no bearer value ever
       # reaches a per-VM projection.
       credentials = builtins.mapAttrs
-        (credential: entry: {
-          providers = entry.providers;
-          tokens = builtins.listToAttrs (map
-            (token: {
-              name = token;
-              value.file = ciphertextPath credential token;
-            })
-            entry.tokens);
-          defaultToken = entry.defaultToken;
-        })
+        (credential: entry:
+          let override = tokenOverrideFor target entry;
+          in {
+            providers = entry.providers;
+            tokens =
+              if override == null
+              then builtins.listToAttrs (map
+                (token: {
+                  name = token;
+                  value.file = ciphertextPath credential token;
+                })
+                (builtins.filter
+                  (token: !(builtins.elem token (claimedTokensOf entry)))
+                  entry.tokens))
+              else builtins.listToAttrs [
+                {
+                  name = override;
+                  value.file = ciphertextPath credential override;
+                }
+              ];
+            defaultToken = if override == null then entry.defaultToken else override;
+          })
         targetCredentials;
       providers = targetProviderCredentials;
     };
@@ -252,7 +298,7 @@ in
       (tokensFor credential)))
     checkedRegistry;
   credentialInventory = builtins.seq checkedRegistry credentialInventoryRaw;
-  providerCredentials = builtins.seq checkedRegistry providerCredentialsRaw;
+  providerCredentials = builtins.seq checkedRegistry providerCredentialsChecked;
   projections = builtins.seq checkedRegistry projectionsRaw;
   recipients = builtins.seq checkedRegistry derivedRecipients;
 }

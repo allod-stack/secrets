@@ -14,6 +14,26 @@ let
     builtins.isString value && builtins.match idPattern value != null;
   validTokenName = value:
     builtins.isString value && builtins.match tokenPattern value != null && value != "none";
+  # A plain string target keeps today's shared-token meaning. An object
+  # target names, by token name, the one ciphertext that machine alone
+  # should receive; the name is resolved through the credential's own
+  # `tokens` list, mirroring how `defaultToken` already resolves.
+  validTargetEntry = entry:
+    validId entry
+    || (builtins.isAttrs entry
+        && builtins.sort builtins.lessThan (builtins.attrNames entry) == [ "name" "token" ]
+        && validId entry.name
+        && validTokenName entry.token);
+  targetNameOf = entry:
+    if builtins.isString entry then entry
+    else if builtins.isAttrs entry && entry ? name then entry.name
+    else null;
+  targetTokenOf = entry:
+    if builtins.isString entry then null else entry.token or null;
+  claimedTokensFor = id:
+    builtins.concatMap
+      (entry: if builtins.isAttrs entry && entry ? token then [ entry.token ] else [])
+      (targetsFor id);
 
   registryIsAttrs = builtins.isAttrs registry;
   safeRegistry = if registryIsAttrs then registry else {};
@@ -27,6 +47,7 @@ let
   targetsFor = id:
     let value = field id "targets" [];
     in if builtins.isList value then value else [];
+  targetNamesFor = id: map targetNameOf (targetsFor id);
   providersFor = id:
     let value = field id "providers" [];
     in if builtins.isList value then value else [];
@@ -44,11 +65,28 @@ let
     credentialIds;
   badTargets = builtins.filter
     (id:
-      let values = field id "targets" null;
+      let
+        values = field id "targets" null;
+        names = if builtins.isList values then map targetNameOf values else [];
       in !(builtins.isList values)
          || values == []
-         || !(builtins.all validId values)
-         || builtins.length values != builtins.length (unique values))
+         || !(builtins.all validTargetEntry values)
+         || builtins.length names != builtins.length (unique names))
+    credentialIds;
+  badTargetTokenRefs = builtins.filter
+    (id:
+      let
+        values = field id "targets" [];
+        tokens = tokensFor id;
+      in builtins.isList values
+         && builtins.any
+              (entry: builtins.isAttrs entry && entry ? token && !(builtins.elem entry.token tokens))
+              values)
+    credentialIds;
+  badDuplicateTokenClaims = builtins.filter
+    (id:
+      let claims = claimedTokensFor id;
+      in builtins.length claims != builtins.length (unique claims))
     credentialIds;
   badProviders = builtins.filter
     (id:
@@ -74,9 +112,26 @@ let
              && !(builtins.isString value
                   && builtins.elem value (tokensFor id))))
     credentialIds;
+  badDefaultTokenClaimedByOverride = builtins.filter
+    (id:
+      hasField id "defaultToken"
+      && safeRegistry.${id}.defaultToken != null
+      && builtins.isString safeRegistry.${id}.defaultToken
+      && builtins.any builtins.isString (targetsFor id)
+      && builtins.elem safeRegistry.${id}.defaultToken (claimedTokensFor id))
+    credentialIds;
 
   allProviders = builtins.concatLists (map providersFor credentialIds);
-  duplicateProviders = duplicates allProviders;
+  # Uniqueness is per (provider, target): a provider may be split across
+  # credentials as long as their targets stay disjoint.
+  providerTargetPairs = builtins.concatLists (map
+    (id: builtins.concatLists (map
+      (provider: map
+        (entry: "${provider}@${targetNameOf entry}")
+        (targetsFor id))
+      (providersFor id)))
+    credentialIds);
+  duplicateProviderTargets = duplicates providerTargetPairs;
 
   errors =
     (if registryIsAttrs then [] else [ "registry must be an object" ])
@@ -84,15 +139,18 @@ let
     ++ (if nonAttrEntries == [] then [] else [ "entries must be objects: ${builtins.concatStringsSep ", " nonAttrEntries}" ])
     ++ (if badFields == [] then [] else [ "entries have missing or unknown fields: ${builtins.concatStringsSep ", " badFields}" ])
     ++ (if badTargets == [] then [] else [ "targets must be non-empty unique ID lists: ${builtins.concatStringsSep ", " badTargets}" ])
+    ++ (if badTargetTokenRefs == [] then [] else [ "target token overrides must name one listed token: ${builtins.concatStringsSep ", " badTargetTokenRefs}" ])
+    ++ (if badDuplicateTokenClaims == [] then [] else [ "a token override must be claimed by at most one target: ${builtins.concatStringsSep ", " badDuplicateTokenClaims}" ])
     ++ (if badProviders == [] then [] else [ "providers must be non-empty unique ID lists: ${builtins.concatStringsSep ", " badProviders}" ])
     ++ (if badTokens == [] then [] else [ "tokens must be non-empty unique token-name lists: ${builtins.concatStringsSep ", " badTokens}" ])
-    ++ (if badDefaultTokens == [] then [] else [ "defaultToken must be null or one listed token: ${builtins.concatStringsSep ", " badDefaultTokens}" ]);
+    ++ (if badDefaultTokens == [] then [] else [ "defaultToken must be null or one listed token: ${builtins.concatStringsSep ", " badDefaultTokens}" ])
+    ++ (if badDefaultTokenClaimedByOverride == [] then [] else [ "defaultToken must not name a token claimed by a target override while a plain target exists: ${builtins.concatStringsSep ", " badDefaultTokenClaimedByOverride}" ]);
 
   checkedRegistry =
     if errors != []
     then throw "pi-credential-registry: ${builtins.concatStringsSep "; " errors}"
-    else if duplicateProviders != []
-    then throw "pi-credential-registry: providers referenced by multiple credentials: ${builtins.concatStringsSep ", " duplicateProviders}"
+    else if duplicateProviderTargets != []
+    then throw "pi-credential-registry: providers referenced by multiple credentials for the same target: ${builtins.concatStringsSep ", " duplicateProviderTargets}"
     else safeRegistry;
 in
 {
@@ -100,14 +158,18 @@ in
     allProviders
     checkedRegistry
     credentialIds
-    duplicateProviders
+    duplicateProviderTargets
     errors
     providersFor
     safeRegistry
+    targetNameOf
+    targetNamesFor
+    targetTokenOf
     targetsFor
     tokensFor
     unique
     validId
+    validTargetEntry
     validTokenName
     ;
 }
