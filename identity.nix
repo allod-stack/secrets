@@ -35,7 +35,9 @@ rec {
   };
 
   # A service VM has no operator account; its identity's username is root.
-  serviceVMs = { };
+  serviceVMs = {
+    forge = { };
+  };
 
   sshHosts = {
     # The hypervisor reaches a VM as that VM's login user with its own host

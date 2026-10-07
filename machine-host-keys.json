@@ -6,5 +6,9 @@
   "privacy-1": {
     "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMYbFta9wmcAFLM5ZJE8va0nIxyJ6jsX6ZWGTK/DNYKJ privacy-1",
     "staged": null
+  },
+  "forge": {
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBnSt8EwbT2HBXftK9bKVU7mP9sZ5Hj4XV3P6HcfnW8r forge",
+    "staged": null
   }
 }
