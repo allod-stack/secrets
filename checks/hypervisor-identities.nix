@@ -18,6 +18,18 @@
         hypervisorIdentities = fixtureHypervisors;
       })
       true)).success;
+
+    # A service VM carries no username of its own (root, derived), so its
+    # collision path is pinned separately from the plain-string fixture above.
+    fixtureServiceVMs = { fixture-hv-a = { }; };
+    fixtureServiceIdentities = builtins.mapAttrs (_: _: { username = "root"; }) fixtureServiceVMs;
+    collidesService = !(builtins.tryEval (builtins.deepSeq
+      (mkVmUsernames {
+        guestUsernames = fixtureGuestUsernames //
+          builtins.mapAttrs (_: id: id.username) fixtureServiceIdentities;
+        hypervisorIdentities = fixtureHypervisors;
+      })
+      true)).success;
   in
   assert lib.assertMsg (builtins.attrNames hypervisorIdentities == [ nexusIdentity.hostname ])
     "hypervisor-identities: with one hypervisor declared, hypervisorIdentities must contain exactly the primary";
@@ -28,6 +40,8 @@
     "hypervisor-identities: mkVmUsernames must fold every hypervisor identity, not just one";
   assert lib.assertMsg collides
     "hypervisor-identities: a hypervisor hostname colliding with a guest machine name must be refused";
+  assert lib.assertMsg collidesService
+    "hypervisor-identities: a serviceVMs entry named like a hypervisor hostname must be refused";
   pkgs.runCommand "hypervisor-identities-check" {} ''
     echo "hypervisor identity export and vmUsernames merge validation passed"
     touch $out

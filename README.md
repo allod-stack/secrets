@@ -53,9 +53,10 @@ This repo does **not** own:
 | `lib.identity` | attrs | raw `identity.nix` — username, email, forge host/port/user, host public key(s), VM rosters, SSH host aliases, external SSH trust targets |
 | `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, agent token file path, GPG signing key, `sshHosts` (the VM's own external SSH aliases, defaulted) |
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
+| `lib.serviceIdentities` | attrs | per-service-VM identity; always `{ username = "root"; }` — a service VM has no operator account |
 | `lib.nexusIdentity` | attrs | the primary hypervisor's identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null, or a Nix path to an `.age` file), `operatorPublicKeys` (always `[ ]` for the primary) |
 | `lib.hypervisorIdentities` | attrs | every hypervisor identity, keyed by hostname; today exactly `{ ${nexusIdentity.hostname} = nexusIdentity; }`. Each entry's `operatorPublicKeys` lists the keys allowed to SSH into that hypervisor |
-| `lib.vmUsernames` | attrs | machine name -> login username, folding `devIdentities`, `privacyIdentities`, and every entry of `hypervisorIdentities`; a hypervisor hostname colliding with a guest name fails evaluation |
+| `lib.vmUsernames` | attrs | machine name -> login username, folding `devIdentities`, `privacyIdentities`, `serviceIdentities`, and every entry of `hypervisorIdentities`; a hypervisor hostname colliding with a guest name fails evaluation |
 | `lib.credentials` | attrs | credential inventory keyed by name; each entry has `kind`, `owner`, `public_key`, `consumers`, `rotation_state` (`pending`, `active`, `staged`, `retiring`, or `retired`) |
 | `lib.forgeSshKeys` | attrs | forge git SSH key registry (from `forge-ssh-keys.json`) |
 | `lib.rotationRegistry` | attrs | credential rotation registry, including each credential's rendered-value template and verification commands (from `rotation-registry.json`); validated on read, so a malformed registry fails every consumer |
@@ -249,7 +250,8 @@ git/                          git policy data installed to ~/.config/git on VMs
 `archetypes` pins this repo as its `secrets` flake input and reads almost every
 output:
 
-- `devIdentities` / `privacyIdentities` / `nexusIdentity` / `vmUsernames` drive
+- `devIdentities` / `privacyIdentities` / `serviceIdentities` / `nexusIdentity` /
+  `vmUsernames` drive
   per-machine users and forge identity.
 - `nexusIdentity.sshPublicKeys` supplies ordered hypervisor recipients;
   `machineHostKeys` / `vmHostKeySecretFiles` supply VM host-key facts and agenix

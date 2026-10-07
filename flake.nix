@@ -71,6 +71,9 @@
       inherit (vm) username;
     }) identity.privacyVMs;
 
+    # A service VM has no operator account; it logs in as root.
+    serviceIdentities = builtins.mapAttrs (_: _: { username = "root"; }) identity.serviceVMs;
+
     nexusIdentity = {
       inherit (identity) username hostname forgeHost forgePort;
       sshPublicKey = identity.hostPublicKey;
@@ -99,12 +102,14 @@
       guestUsernames // hypervisorUsernames;
 
     vmUsernames = mkVmUsernames {
-      guestUsernames = builtins.mapAttrs (_: id: id.username) (devIdentities // privacyIdentities);
+      guestUsernames = builtins.mapAttrs (_: id: id.username)
+        (devIdentities // privacyIdentities // serviceIdentities);
       inherit hypervisorIdentities;
     };
   in {
     lib.devIdentities = devIdentities;
     lib.privacyIdentities = privacyIdentities;
+    lib.serviceIdentities = serviceIdentities;
     lib.nexusIdentity = nexusIdentity;
     lib.hypervisorIdentities = hypervisorIdentities;
     lib.vmUsernames = vmUsernames;

@@ -34,6 +34,9 @@ rec {
     privacy-1 = { username = "privacy"; };
   };
 
+  # A service VM has no operator account; its identity's username is root.
+  serviceVMs = { };
+
   sshHosts = {
     # The hypervisor reaches a VM as that VM's login user with its own host
     # key, the one the VM authorizes; the forge key is the VM's, not ours.
