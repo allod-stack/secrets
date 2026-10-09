@@ -51,7 +51,7 @@ This repo does **not** own:
 | Output | Type | Description |
 |---|---|---|
 | `lib.identity` | attrs | raw `identity.nix` — username, email, forge host/port/user, host public key(s), VM rosters, SSH host aliases, external SSH trust targets |
-| `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, agent token file path, GPG signing key, `sshHosts` (the VM's own external SSH aliases, defaulted) |
+| `lib.devIdentities` | attrs | per-dev-VM identity: forge user, SSH key name, agent token file path, GPG signing key, `forgeUrl` (API base URL; defaults to `https://<forgeHost>` when the identity does not set it), `sshHosts` (the VM's own external SSH aliases, defaulted) |
 | `lib.privacyIdentities` | attrs | per-privacy-VM identity (username only) |
 | `lib.serviceIdentities` | attrs | per-service-VM identity; always `{ username = "root"; }` — a service VM has no operator account |
 | `lib.nexusIdentity` | attrs | the primary hypervisor's identity: hostname, host SSH public keys, forge coordinates, `userForgejoTokenFile` / `siteHostingConfigFile` (null, or a Nix path to an `.age` file), `operatorPublicKeys` (always `[ ]` for the primary) |

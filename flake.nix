@@ -51,8 +51,14 @@
           (file: type: type == "regular" && lib.hasSuffix "-ssh.age" file)
           (builtins.readDir vmHostKeyDir));
 
+    # Absent means a fork's identity predates this field: default to https on
+    # the forge host, since clone transport (sshHost) and API transport
+    # (forgeUrl) diverge only when an identity sets this explicitly.
+    mkForgeUrl = identity: identity.forgeUrl or "https://${identity.forgeHost}";
+
     devIdentities = builtins.mapAttrs (name: vm: {
       inherit (identity) username forgeHost forgePort;
+      forgeUrl = mkForgeUrl identity;
       inherit (vm) sshKeyName;
       forgeUser = identity.forgeUser;
       gpgSigningKey = identity.gpgSigningKey;
@@ -76,6 +82,7 @@
 
     nexusIdentity = {
       inherit (identity) username hostname forgeHost forgePort;
+      forgeUrl = mkForgeUrl identity;
       sshPublicKey = identity.hostPublicKey;
       sshPublicKeys = identity.hostPublicKeys;
       # A deployment sets each of these to a Nix path, e.g. `./secrets + "/<name>.age"`
@@ -141,7 +148,7 @@
           secretsNix machineHostKeys credentialRegistryDiagnostics
           validateCredentialRegistry mkPiCredentialContract
           piCredentialContract hypervisorIdentities nexusIdentity
-          mkVmUsernames;
+          mkVmUsernames mkForgeUrl;
         machines = inventory.lib.machines;
       });
   };

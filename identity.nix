@@ -8,6 +8,7 @@ rec {
 
   forgeHost = "forge.anarch.diy";
   forgePort = 2222;
+  forgeUrl = "https://forge.anarch.diy";
   forgeUser = "allod-agent";
 
   gpgSigningKey = null;

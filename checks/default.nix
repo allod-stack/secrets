@@ -20,6 +20,7 @@
 , hypervisorIdentities
 , nexusIdentity
 , mkVmUsernames
+, mkForgeUrl
 , machines
 }:
 {
@@ -49,5 +50,9 @@
 
   hypervisor-recipient-coverage = import ./hypervisor-recipient-coverage.nix {
     inherit lib pkgs identity secretsNix machineHostKeys machines;
+  };
+
+  forge-url = import ./forge-url.nix {
+    inherit lib pkgs mkForgeUrl devIdentities nexusIdentity identity;
   };
 }
