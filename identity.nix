@@ -33,6 +33,7 @@ rec {
 
   privacyVMs = {
     privacy-1 = { username = "privacy"; };
+    bitcoin-node = { username = "bitcoin"; };
   };
 
   # A service VM has no operator account; its identity's username is root.
@@ -51,6 +52,11 @@ rec {
     privacy-1 = {
       hostname = "192.0.2.11";
       user = "privacy";
+      identityFile = "~/.ssh/host";
+    };
+    bitcoin-node = {
+      hostname = "192.0.2.13";
+      user = "bitcoin";
       identityFile = "~/.ssh/host";
     };
     "forge.anarch.diy" = {

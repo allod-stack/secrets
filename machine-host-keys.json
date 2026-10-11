@@ -10,5 +10,9 @@
   "forge": {
     "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBnSt8EwbT2HBXftK9bKVU7mP9sZ5Hj4XV3P6HcfnW8r forge",
     "staged": null
+  },
+  "bitcoin-node": {
+    "active": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIILrs3WjjQc9XLwzTCmXOeg7qbNFrlxlauFpRQXzyKmH bitcoin-node",
+    "staged": null
   }
 }
