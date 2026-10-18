@@ -3,6 +3,7 @@ let
   forgeSshKeys = builtins.fromJSON (builtins.readFile ./forge-ssh-keys.json);
   identity = import ./identity.nix;
   piCredentials = builtins.fromJSON (builtins.readFile ./pi-credentials.json);
+  rotationRegistry = builtins.fromJSON (builtins.readFile ./rotation-registry.json);
 
   vmKeys = vm:
     let d = machineHostKeys.${vm};
@@ -13,6 +14,12 @@ let
     inherit machineHostKeys;
     hypervisorPublicKeys = identity.hostPublicKeys;
   };
+  # Declared credentials' recipients; 'allod secret declare' writes no line here.
+  registryRecipients = (import ./lib/registry-recipients.nix {
+    registry = rotationRegistry;
+    inherit machineHostKeys;
+    hypervisorPublicKeys = identity.hostPublicKeys;
+  }).recipients;
 
   # Unlisted when no VM has forge access, so agenix never asks for it.
   forgeAccessVMs = import ./lib/forge-access-vms.nix { inherit identity; };
@@ -32,4 +39,4 @@ let
     value.publicKeys = [ hostKey ];
   }) ([ identity.hostname ] ++ builtins.attrNames machineHostKeys));
 in
-agentTokenRecipients // forgeKeyRecipients // vmHostKeyRecipients // piCredentialRecipients
+agentTokenRecipients // forgeKeyRecipients // vmHostKeyRecipients // piCredentialRecipients // registryRecipients

@@ -21,11 +21,16 @@
 , nexusIdentity
 , mkVmUsernames
 , mkForgeUrl
+, registryRecipients
 , machines
 }:
 {
   external-ssh-trust-targets = import ./external-ssh-trust-targets.nix {
     inherit lib pkgs identity;
+  };
+
+  registry-recipients = import ./registry-recipients.nix {
+    inherit lib pkgs registryRecipients secretsNix;
   };
 
   dev-ssh-hosts = import ./dev-ssh-hosts.nix {

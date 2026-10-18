@@ -40,6 +40,11 @@
     inherit (import ./lib/credential-registry.nix { inherit lib credentialEncodings; })
       credentialRegistryDiagnostics validateCredentialRegistry;
     rotationRegistry = validateCredentialRegistry (builtins.fromJSON (builtins.readFile ./rotation-registry.json));
+    registryRecipients = (import ./lib/registry-recipients.nix {
+      registry = rotationRegistry;
+      inherit machineHostKeys;
+      hypervisorPublicKeys = identity.hostPublicKeys;
+    }).recipients;
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =
       lib.mapAttrs'
@@ -136,6 +141,7 @@
     lib.piCredentialProjections = piCredentialContract.projections;
     lib.validatePiProviderReferences = piCredentialContract.validateProviderReferences;
     lib.mkPiCredentialContract = mkPiCredentialContract;
+    lib.registryRecipients = registryRecipients;
     lib.projectDevSshHosts = devSshHosts.project;
     lib.consumedInventorySource = inventory;
 
@@ -148,7 +154,7 @@
           secretsNix machineHostKeys credentialRegistryDiagnostics
           validateCredentialRegistry mkPiCredentialContract
           piCredentialContract hypervisorIdentities nexusIdentity
-          mkVmUsernames mkForgeUrl;
+          mkVmUsernames mkForgeUrl registryRecipients;
         machines = inventory.lib.machines;
       });
   };
