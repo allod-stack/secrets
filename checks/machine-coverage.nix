@@ -1,11 +1,9 @@
 { lib, pkgs, identity, machineHostKeys, machines }:
   let
-    # Contract: the guests the consumed inventory declares, the entries of
-    # machine-host-keys.json and the identities of identity.nix are one set
-    # of names, and each identity sits in the attrset for its machine's type.
-    # Trap: the primary hypervisor is never in machine-host-keys.json; its
-    # key is identity.hostPublicKeys. Other hypervisors may be, so the
-    # entry rule admits any inventory machine but the primary.
+    # Contract: inventory guests, machine-host-keys.json entries and
+    # identity.nix names are one set, each identity in its type's attrset.
+    # Trap: the primary hypervisor is never in machine-host-keys.json (its
+    # key is identity.hostPublicKeys); a second hypervisor may be.
     identitySets = { dev = "devVMs"; privacy = "privacyVMs"; service = "serviceVMs"; };
 
     machineCoverageDiagnostics = { machines, machineHostKeys, identity, primaryName }:
