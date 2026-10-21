@@ -81,6 +81,7 @@ This repo does **not** own:
 | `checks.<platform>.registry-recipients` | derivation | pins the declared-credential recipient derivation on a synthetic registry, refuses a target machine missing from `machine-host-keys.json` (naming the credential and the machine), two credentials on one path (naming it) and a bad hypervisor key list, and asserts `secrets.nix` carries every derived line unchanged, which bites only in a fork whose registry is non-empty |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 | `checks.<platform>.dev-ssh-hosts` | derivation | validates the per-dev-VM external SSH alias projection: a machine without `sshHosts` projects empty, an entry gains its VM's own key and `identitiesOnly` while keeping its own fields, and one sabotage witness per refusal (reserved name, non-literal alias, two aliases differing only by case, malformed entry, an `extraOptions` key that is not a bare directive, a newline inside any string field) |
+| `checks.<platform>.machine-coverage` | derivation | asserts the consumed inventory's guests, `machine-host-keys.json` and the identities in `identity.nix` name one set of machines, each identity under the attrset for its machine's type and the primary hypervisor in none of them, with one sabotage witness per refusal |
 
 `checks` are generated for every platform in `inventory.lib.supportedPlatforms`.
 The only flake inputs are `nixpkgs` (nixos-25.11) and `inventory`.

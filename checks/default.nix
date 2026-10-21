@@ -60,4 +60,8 @@
   forge-url = import ./forge-url.nix {
     inherit lib pkgs mkForgeUrl devIdentities nexusIdentity identity;
   };
+
+  machine-coverage = import ./machine-coverage.nix {
+    inherit lib pkgs identity machineHostKeys machines;
+  };
 }
