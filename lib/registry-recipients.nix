@@ -22,8 +22,7 @@ let
     (target: if (target.kind or null) == "nixos-host" then [] else [ target.system ])
     credential.targets);
 
-  # A "nixos-host" target naming primaryHostname is covered by the leading
-  # hypervisorPublicKeys; one naming any other system is a second hypervisor.
+  # The primary's keys already lead every list, so only another hypervisor is collected here.
   hostSystems = credential: unique (builtins.concatMap
     (target:
       if (target.kind or null) == "nixos-host" && target.system != primaryHostname
@@ -74,8 +73,7 @@ in
         (credential: {
           name = credential.secret_path;
           value.publicKeys = hypervisorPublicKeys
-            ++ builtins.concatLists (map recipientsFor (guestSystems credential))
-            ++ builtins.concatLists (map recipientsFor (hostSystems credential));
+            ++ builtins.concatLists (map recipientsFor (unique (guestSystems credential ++ hostSystems credential)));
         })
         credentials);
 }

@@ -49,6 +49,11 @@
             secret_path = "secrets/host-b-only.age";
             targets = [ (target "hv-b" "nixos-host") ];
           }
+          {
+            credential = "both-kinds";
+            secret_path = "secrets/both-kinds.age";
+            targets = [ (target "hv-b" "dev-vm") (target "hv-b" "nixos-host") ];
+          }
         ];
       };
     };
@@ -96,6 +101,7 @@
     "secrets/cred-b.age".publicKeys = [ "forge-host-active" "forge-host-staged" "dev-b-active" "dev-b-staged" "dev-a-active" ];
     "secrets/host-only.age".publicKeys = [ "forge-host-active" "forge-host-staged" ];
     "secrets/host-b-only.age".publicKeys = [ "forge-host-active" "forge-host-staged" "hv-b-active" "hv-b-staged" ];
+    "secrets/both-kinds.age".publicKeys = [ "forge-host-active" "forge-host-staged" "hv-b-active" "hv-b-staged" ];
   }) "registry-recipients: recipient derivation drifted";
   assert lib.assertMsg (diagnose fixtureArgs == [])
     "registry-recipients: the positive fixture produced diagnostics";
@@ -119,6 +125,9 @@
   assert lib.assertMsg (fixture."secrets/host-only.age".publicKeys == [
     "forge-host-active" "forge-host-staged"
   ]) "registry-recipients: a nixos-host target on the primary resolved to more than the primary's keys";
+  assert lib.assertMsg (fixture."secrets/both-kinds.age".publicKeys == [
+    "forge-host-active" "forge-host-staged" "hv-b-active" "hv-b-staged"
+  ]) "registry-recipients: a system named as both a guest and a nixos-host target contributed its keys twice";
   assert lib.assertMsg (rejects unregisteredHypervisorSabotage)
     "registry-recipients: a nixos-host target naming neither the primary nor a registered hypervisor was accepted";
   assert lib.assertMsg (diagnose unregisteredHypervisorSabotage == [
