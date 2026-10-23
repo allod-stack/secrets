@@ -8,6 +8,7 @@
     fixtureKeys = {
       dev-a = { active = "dev-a-active"; staged = null; };
       dev-b = { active = "dev-b-active"; staged = "dev-b-staged"; };
+      hv-b = { active = "hv-b-active"; staged = "hv-b-staged"; };
     };
     fixtureHypervisorPublicKeys = [ "forge-host-active" "forge-host-staged" ];
     target = system: kind: {
@@ -43,6 +44,11 @@
             secret_path = "secrets/host-only.age";
             targets = [ (target "forge-host" "nixos-host") ];
           }
+          {
+            credential = "host-b-only";
+            secret_path = "secrets/host-b-only.age";
+            targets = [ (target "hv-b" "nixos-host") ];
+          }
         ];
       };
     };
@@ -50,6 +56,7 @@
       registry = fixtureRegistry;
       machineHostKeys = fixtureKeys;
       hypervisorPublicKeys = fixtureHypervisorPublicKeys;
+      primaryHostname = "forge-host";
     };
     fixture = derive fixtureArgs;
 
@@ -72,6 +79,11 @@
     duplicateHypervisorSabotage = fixtureArgs // {
       hypervisorPublicKeys = [ "forge-host-active" "forge-host-active" ];
     };
+    unregisteredHypervisorSabotage = withSolo {
+      credential = "rogue-hv";
+      secret_path = "secrets/rogue-hv.age";
+      targets = [ (target "hv-ghost" "nixos-host") ];
+    };
 
     consumed = lib.all
       (path: secretsNix ? ${path} && secretsNix.${path}.publicKeys == registryRecipients.${path}.publicKeys)
@@ -83,6 +95,7 @@
     "secrets/cred-a.age".publicKeys = [ "forge-host-active" "forge-host-staged" "dev-a-active" ];
     "secrets/cred-b.age".publicKeys = [ "forge-host-active" "forge-host-staged" "dev-b-active" "dev-b-staged" "dev-a-active" ];
     "secrets/host-only.age".publicKeys = [ "forge-host-active" "forge-host-staged" ];
+    "secrets/host-b-only.age".publicKeys = [ "forge-host-active" "forge-host-staged" "hv-b-active" "hv-b-staged" ];
   }) "registry-recipients: recipient derivation drifted";
   assert lib.assertMsg (diagnose fixtureArgs == [])
     "registry-recipients: the positive fixture produced diagnostics";
@@ -100,6 +113,17 @@
     "registry-recipients: an empty hypervisor key list was accepted";
   assert lib.assertMsg (rejects duplicateHypervisorSabotage)
     "registry-recipients: a duplicate hypervisor key was accepted";
+  assert lib.assertMsg (fixture."secrets/host-b-only.age".publicKeys == [
+    "forge-host-active" "forge-host-staged" "hv-b-active" "hv-b-staged"
+  ]) "registry-recipients: a nixos-host target on a registered second hypervisor did not resolve to its own keys";
+  assert lib.assertMsg (fixture."secrets/host-only.age".publicKeys == [
+    "forge-host-active" "forge-host-staged"
+  ]) "registry-recipients: a nixos-host target on the primary resolved to more than the primary's keys";
+  assert lib.assertMsg (rejects unregisteredHypervisorSabotage)
+    "registry-recipients: a nixos-host target naming neither the primary nor a registered hypervisor was accepted";
+  assert lib.assertMsg (diagnose unregisteredHypervisorSabotage == [
+    "credential 'rogue-hv' targets hypervisor 'hv-ghost', which is neither the primary hypervisor nor registered in machine-host-keys.json"
+  ]) "registry-recipients: the unregistered-hypervisor refusal does not name the credential and the hypervisor";
   assert lib.assertMsg consumed
     "registry-recipients: secrets.nix does not carry every derived recipient line unchanged";
   pkgs.runCommand "registry-recipients" { } ''

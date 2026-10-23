@@ -44,6 +44,7 @@
       registry = rotationRegistry;
       inherit machineHostKeys;
       hypervisorPublicKeys = identity.hostPublicKeys;
+      primaryHostname = identity.hostname;
     }).recipients;
     vmHostKeyDir = ./secrets/vm-host-keys;
     vmHostKeySecretFiles =

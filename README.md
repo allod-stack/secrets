@@ -70,7 +70,7 @@ This repo does **not** own:
 | `lib.piCredentialInventory` | attrs | credential-inventory entries derived for Pi ciphertexts, one consumer record per token ciphertext |
 | `lib.piCredentialRecipients` | attrs | relative Pi ciphertext path -> `{ publicKeys = [...] }`, ordered from hypervisor identity keys then target VM keys |
 | `lib.piCredentialProjections` | attrs | dev VM -> `{ credentials; providers; }` projection |
-| `lib.registryRecipients` | attrs | `secret_path` of every credential in `rotation-registry.json` -> `{ publicKeys = [...] }`, hypervisor identity keys then the keys of each target whose `kind` is not `nixos-host`; `secrets.nix` merges the same map, so a declared credential needs no hand-written recipient line |
+| `lib.registryRecipients` | attrs | `secret_path` of every credential in `rotation-registry.json` -> `{ publicKeys = [...] }`, hypervisor identity keys then the keys of each target whose `kind` is not `nixos-host`, then the keys of each `nixos-host` target whose `system` is a registered second hypervisor (one naming `primaryHostname` contributes nothing further, and one naming neither is refused by name); `secrets.nix` merges the same map, so a declared credential needs no hand-written recipient line |
 | `lib.validatePiProviderReferences` | function | rejects provider IDs absent from a caller-supplied known-ID list and returns the provider-to-credential projection |
 | `lib.mkPiCredentialContract` | function | validates and derives the same contract from caller-supplied data; accepts explicit ordered `hypervisorPublicKeys`, while `nexusName` is required only for the legacy machine-key fallback |
 | `lib.projectDevSshHosts` | function | projects one dev VM's `devVMs.<vm>.sshHosts` onto its defaulted alias set, refusing a reserved name, a non-literal alias, two aliases differing only by case, a malformed entry, and anything that would open a second `ssh_config` block (an `extraOptions` `header` or non-bare-directive key, a newline in any string field); the framework and downstream forks call it rather than respelling the rules |
@@ -78,7 +78,7 @@ This repo does **not** own:
 | `checks.<platform>.credential-inventory` | derivation | validates inventory schema, recipient resolution, key/secret file presence, and rotation invariants |
 | `checks.<platform>.credential-registry` | derivation | validates the public credential rotation registry plus a positive value-template fixture and one sabotage witness per template/verification validator |
 | `checks.<platform>.pi-credential-registry` | derivation | validates the empty public contract plus synthetic schema, target, token, default, recipient, ciphertext, projection, and provider-reference sabotage |
-| `checks.<platform>.registry-recipients` | derivation | pins the declared-credential recipient derivation on a synthetic registry, refuses a target machine missing from `machine-host-keys.json` (naming the credential and the machine), two credentials on one path (naming it) and a bad hypervisor key list, and asserts `secrets.nix` carries every derived line unchanged, which bites only in a fork whose registry is non-empty |
+| `checks.<platform>.registry-recipients` | derivation | pins the declared-credential recipient derivation on a synthetic registry with a second hypervisor, refuses a target machine missing from `machine-host-keys.json` (naming the credential and the machine), a `nixos-host` target naming neither the primary nor a registered hypervisor (naming the credential and the hypervisor), two credentials on one path (naming it) and a bad hypervisor key list, and asserts `secrets.nix` carries every derived line unchanged, which bites only in a fork whose registry is non-empty |
 | `checks.<platform>.external-ssh-trust-targets` | derivation | validates the external SSH trust-target schema against `identity.sshHosts` |
 | `checks.<platform>.dev-ssh-hosts` | derivation | validates the per-dev-VM external SSH alias projection: a machine without `sshHosts` projects empty, an entry gains its VM's own key and `identitiesOnly` while keeping its own fields, and one sabotage witness per refusal (reserved name, non-literal alias, two aliases differing only by case, malformed entry, an `extraOptions` key that is not a bare directive, a newline inside any string field) |
 
@@ -200,10 +200,13 @@ of SSH public keys allowed to decrypt it.
   `machine-host-keys.json`, so a key rotation can encrypt to both old and new
   recipients during the overlap.
 - **Declared credentials** (`allod secret declare`) get their recipients from
-  `rotation-registry.json`: the hypervisor's keys plus the keys of every target
-  whose `kind` is not `nixos-host` (`lib/registry-recipients.nix`). Nothing
-  writes a recipient line for them by hand, so a fork that binds its hypervisor
-  keys differently changes one argument, not every line.
+  `rotation-registry.json`: the primary hypervisor's keys plus the keys of
+  every target whose `kind` is not `nixos-host`, plus the keys of a `nixos-host`
+  target whose `system` is a registered second hypervisor — one naming the
+  primary (`identity.hostname`) adds nothing further, and one naming neither is
+  refused (`lib/registry-recipients.nix`). Nothing writes a recipient line for
+  them by hand, so a fork that binds its hypervisor keys differently changes
+  one argument, not every line.
 - A declared Pi credential holds one or more named tokens, and each token is a
   separate ciphertext encrypted to the active/staged Nexus key plus the
   active/staged keys of every target VM — one recipient set per credential,

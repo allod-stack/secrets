@@ -19,6 +19,7 @@ let
     registry = rotationRegistry;
     inherit machineHostKeys;
     hypervisorPublicKeys = identity.hostPublicKeys;
+    primaryHostname = identity.hostname;
   }).recipients;
 
   # Unlisted when no VM has forge access, so agenix never asks for it.
